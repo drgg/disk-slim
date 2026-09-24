@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>DiskSlimApp</AssemblyName>
+    <RootNamespace>DiskSlim.Desktop</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DiskSlim.Core\DiskSlim.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DiskSlim.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- WPF 项目默认不引入 System.IO（避免 Path 和 System.Windows.Shapes.Path 重名），本项目不使用 Shapes.Path。 -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+</Project>

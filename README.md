@@ -2,26 +2,59 @@
 
 磁盘空间分析和清理工具：告诉你空间被谁占了、哪些可以放心清理，并且安全地帮你清理。
 
-- `diskslim`（scan）**只读**，不会修改任何文件。
-- `diskslim clean` **默认只模拟**；加 `--execute` 并确认后才会真正清理，每一步都记录在操作日志里。
+- **图形界面** `DiskSlimApp.exe`：勾选要清理的项目，用方块图浏览空间分布。
+- **命令行** `diskslim.exe`：`diskslim`（scan）**只读**；`diskslim clean` **默认只模拟**，加 `--execute` 并确认后才真正清理。
+
+两者共用同一套扫描、规则和清理引擎，每次清理都记录在操作日志里。
 
 ## 快速开始
 
-需要 .NET 10 运行时（Windows）。
+需要 .NET 10 桌面运行时（Windows）。
+
+```bash
+dotnet run --project src/DiskSlim.Desktop
+```
 
 ```bash
 dotnet run --project src/DiskSlim.Cli
 ```
 
-或者先发布成单个 exe（约 400 KB）：
+或者发布成单个 exe（各约 450 KB）：
+
+```bash
+dotnet publish src/DiskSlim.Desktop -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -o dist
+```
 
 ```bash
 dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -o dist
 ```
 
-以管理员身份运行可以统计和清理更多系统目录（比如 `C:\Windows\Temp`）。
+以管理员身份运行可以统计和清理更多系统目录（比如 `C:\Windows\Temp`）。图形界面里有“以管理员身份运行”按钮。
 
-## 查看报告：`diskslim scan`
+## 图形界面
+
+打开后自动扫描系统盘（约 5～10 秒，只读取、不修改），然后有三个页面：
+
+- **可清理项目**：按“可放心清理 / 需要确认 / 仅供参考”分组。“可放心清理”默认勾选，“需要确认”要手动勾选，“仅供参考”不能勾选。相关程序正在运行的项目会标出来，底部的“预计释放”不会把它们算进去。
+- **空间分布**：方块图，面积代表大小；点击方块进入该文件夹，上方路径可以返回。
+  - 绿 / 黄 / 红色方块是规则命中的目录（可放心清理 / 需要确认 / 仅供参考），蓝紫灰色是普通文件夹；
+  - 方块底部的绿色细条表示里面有多少可以清理，方便顺着它一层层找到可清理的内容；
+  - 右侧列出当前目录的子项和各自的可清理空间；右键可以在资源管理器中显示。
+- **最大的文件**：最大的 50 个文件。
+
+点“清理选中项…”后先弹出**模拟结果**：每一项会怎么处理、多少文件、为什么跳过。点“开始清理”才执行，可以随时“停止”。完成后显示磁盘剩余空间的变化和日志位置，并自动重新扫描。
+
+### 截图模式
+
+用于检查界面或生成文档配图：在屏幕外打开窗口，扫描后渲染成 PNG 并退出。清理对话框只做模拟，**截图模式永远不会执行清理**。
+
+```bash
+DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-dialog dialog.png
+```
+
+`--tab`：0 可清理项目，1 空间分布，2 最大的文件；`--size 1280x820` 设置窗口大小。
+
+## 命令行：查看报告 `diskslim scan`
 
 | 命令 | 作用 |
 |---|---|
@@ -35,7 +68,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 
 报告里能自动清理的项目会提示对应的 `diskslim clean` 命令。
 
-## 清理：`diskslim clean`
+## 命令行：清理 `diskslim clean`
 
 ```bash
 diskslim clean
@@ -136,14 +169,17 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 ## 项目结构
 
 ```
-src/DiskSlim.Core/            扫描、规则和清理引擎（以后的图形界面也复用这一层）
+src/DiskSlim.Core/            扫描、规则和清理引擎（命令行和图形界面共用）
   Scanning/TreeScanner.cs     并行遍历目录树，统计大小
   Rules/                      规则模型、加载校验、路径展开和归属（RuleMatcher）、规则评估、默认规则
   Cleaning/                   清理计划、安全防线、执行器、文件操作、操作日志
   Reporting/                  报告模型和报告生成
+  Visualization/              方块图布局（Squarified Treemap）、可清理空间索引
+  Presentation/               两个界面共用的显示文字
   Platform/                   回收站、管理员权限、进程列表
 src/DiskSlim.Cli/             命令行：参数解析、scan 和 clean 命令、控制台输出、Markdown 导出
-tests/DiskSlim.Tests/         xUnit 测试
+src/DiskSlim.Desktop/         图形界面（WPF）：视图模型、方块图控件、清理对话框、截图模式
+tests/DiskSlim.Tests/         xUnit 测试（含视图模型）
 ```
 
 所有写操作都集中在 [Cleaning/FileOperations.cs](src/DiskSlim.Core/Cleaning/FileOperations.cs)，便于审查。
@@ -166,6 +202,6 @@ dotnet test DiskSlim.slnx
 
 - ~~**v0.1**：只读扫描和报告~~
 - ~~**v0.2**：模拟运行、真实清理、安全防线、操作日志~~
-- **v0.3**：图形界面（方块图、分类勾选、风险颜色）
+- ~~**v0.3**：图形界面（方块图、分类勾选、风险颜色）~~
 - **v0.4**：重复文件查找、系统级清理（用管理员权限的助手进程调用 DISM 和磁盘清理）、隔离区和撤销
 - **v0.5**：定时清理、空间增长追踪、扩充国内软件规则

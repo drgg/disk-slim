@@ -2,6 +2,7 @@ using System.Globalization;
 using DiskSlim.Core.Cleaning;
 using DiskSlim.Core.Formatting;
 using DiskSlim.Core.Platform;
+using DiskSlim.Core.Presentation;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
 
@@ -77,18 +78,7 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
 
     public string ConfirmPrompt(CleanupResult preview)
     {
-        var parts = new List<string>();
-        if (preview.DeletedFiles > 0)
-        {
-            parts.Add($"永久删除 {preview.DeletedFiles:N0} 项（{ByteSize.Format(preview.DeletedBytes)}）");
-        }
-
-        if (preview.RecycledFiles > 0)
-        {
-            parts.Add($"把 {preview.RecycledFiles:N0} 个文件移到回收站（{ByteSize.Format(preview.RecycledBytes)}）");
-        }
-
-        return $"  将要{string.Join("，", parts)}。永久删除的内容无法恢复。确定执行吗？输入 y 确认，其他任意键取消：";
+        return $"  {DisplayText.ConfirmSummary(preview)}确定执行吗？输入 y 确认，其他任意键取消：";
     }
 
     public void RenderResult(CleanupResult result)
@@ -98,16 +88,14 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         foreach (var outcome in result.Rules)
         {
             w.Write("    " + TextWidth.PadRight(TextWidth.Truncate(outcome.Rule.Name, nameWidth), nameWidth) + "  ");
-            var (text, color) = ResultText(outcome);
-            w.WriteLine(text, color);
+            var (text, kind) = DisplayText.ResultSummary(outcome);
+            w.WriteLine(text, ColorOf(kind));
             RenderDetails(outcome, executed: true);
         }
 
         var freed = result.FreeBytesAfter - result.FreeBytesBefore;
         w.WriteLine();
-        w.Write("  磁盘剩余空间：", ConsoleColor.White);
-        w.Write($"{ByteSize.Format(result.FreeBytesBefore)} → {ByteSize.Format(result.FreeBytesAfter)}");
-        w.WriteLine(freed >= 0 ? $"（增加 {ByteSize.Format(freed)}）" : $"（减少 {ByteSize.Format(-freed)}，可能有其他程序同时在写入）", freed > 0 ? ConsoleColor.Green : ConsoleColor.DarkGray);
+        w.WriteLine("  " + DisplayText.FreeSpaceChange(result), freed > 0 ? ConsoleColor.Green : ConsoleColor.DarkGray);
         if (result.RecycledBytes > 0)
         {
             w.WriteLine($"  另有 {ByteSize.Format(result.RecycledBytes)} 移到了回收站，清空回收站后才会释放空间。", ConsoleColor.DarkGray);
@@ -123,39 +111,18 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
 
     private void RenderPlannedRule(RuleOutcome outcome, int nameWidth)
     {
-        var planned = outcome.Planned;
         w.Write("    " + TextWidth.PadRight(TextWidth.Truncate(outcome.Rule.Name, nameWidth), nameWidth) + "  ");
 
-        switch (planned.Status)
+        var (text, kind) = DisplayText.PlanSummary(outcome);
+        if (kind != OutcomeKind.Done)
         {
-            case PlanStatus.ProcessRunning:
-                w.WriteLine($"跳过：{string.Join("、", planned.RunningProcesses)} 正在运行，请先关闭", ConsoleColor.DarkYellow);
-                return;
+            var skippedNote = kind == OutcomeKind.Nothing && outcome.SkippedTotal > 0 ? $"（{outcome.SkippedTotal:N0} 个文件不满足条件）" : "";
+            w.WriteLine(text + skippedNote, ColorOf(kind));
+            foreach (var problem in outcome.Planned.Problems)
+            {
+                w.WriteLine("      " + problem, ConsoleColor.Red);
+            }
 
-            case PlanStatus.NothingFound:
-                w.WriteLine("没有找到需要清理的内容", ConsoleColor.DarkGray);
-                return;
-
-            case PlanStatus.Forbidden:
-                w.WriteLine("拒绝执行：目标位于受保护的位置", ConsoleColor.Red);
-                foreach (var problem in planned.Problems)
-                {
-                    w.WriteLine("      " + problem, ConsoleColor.Red);
-                }
-
-                return;
-        }
-
-        if (outcome.Files == 0 && outcome.Failed == 0)
-        {
-            w.WriteLine("没有需要清理的内容" + (outcome.SkippedTotal > 0 ? $"（{outcome.SkippedTotal:N0} 个文件不满足条件）" : ""), ConsoleColor.DarkGray);
-            RenderDetails(outcome, executed: false);
-            return;
-        }
-
-        if (outcome.Files == 0)
-        {
-            w.WriteLine("无法处理", ConsoleColor.DarkYellow);
             RenderDetails(outcome, executed: false);
             return;
         }
@@ -169,33 +136,14 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
     /// <summary>跳过、失败的原因和明细。</summary>
     private void RenderDetails(RuleOutcome outcome, bool executed)
     {
-        var skipped = new List<string>();
-        if (outcome.SkippedTooNew > 0)
+        if (DisplayText.SkipSummary(outcome) is { } skipped && (outcome.Files > 0 || outcome.Failed > 0))
         {
-            skipped.Add($"{outcome.SkippedTooNew:N0} 个太新（{outcome.Rule.MinAgeDays} 天内）");
+            w.WriteLine("      " + skipped, ConsoleColor.DarkGray);
         }
 
-        if (outcome.SkippedProtected > 0)
+        if (DisplayText.FailureSummary(outcome, executed) is { } failures)
         {
-            skipped.Add($"{outcome.SkippedProtected:N0} 个只读或系统文件");
-        }
-
-        if (outcome.SkippedLinks > 0)
-        {
-            skipped.Add($"{outcome.SkippedLinks:N0} 个链接或云盘文件");
-        }
-
-        if (skipped.Count > 0 && (outcome.Files > 0 || outcome.Failed > 0))
-        {
-            w.WriteLine("      保留：" + string.Join("，", skipped), ConsoleColor.DarkGray);
-        }
-
-        if (outcome.Failed > 0)
-        {
-            var reasons = outcome.Failures.GroupBy(f => f.Reason).OrderByDescending(g => g.Count()).Select(g => g.Key).Take(2);
-            var verb = executed ? "未能处理" : "无法处理";
-            w.WriteLine($"      {verb} {outcome.Failed:N0} 项：{string.Join("；", reasons)}"
-                + (reasons.Any(r => r.Contains("权限")) ? "（以管理员身份运行可以处理更多）" : ""), ConsoleColor.DarkYellow);
+            w.WriteLine("      " + failures, ConsoleColor.DarkYellow);
             if (verbose)
             {
                 foreach (var failure in outcome.Failures.Take(10))
@@ -234,33 +182,13 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         }
     }
 
-    private static (string Text, ConsoleColor? Color) ResultText(RuleOutcome outcome)
+    private static ConsoleColor ColorOf(OutcomeKind kind) => kind switch
     {
-        if (outcome.Planned.Status == PlanStatus.ProcessRunning)
-        {
-            return ($"跳过：{string.Join("、", outcome.Planned.RunningProcesses)} 正在运行", ConsoleColor.DarkYellow);
-        }
-
-        if (outcome.Planned.Status == PlanStatus.Forbidden)
-        {
-            return ("拒绝执行：目标位于受保护的位置", ConsoleColor.Red);
-        }
-
-        if (outcome.Planned.Status == PlanStatus.NothingFound || (outcome.Files == 0 && outcome.Failed == 0 && !outcome.Cancelled))
-        {
-            return ("没有需要清理的内容", ConsoleColor.DarkGray);
-        }
-
-        var done = outcome.Rule.Action switch
-        {
-            CleanupAction.Recycle => $"已移到回收站 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
-            CleanupAction.EmptyRecycleBin => $"已清空 {outcome.Files:N0} 项（{ByteSize.Format(outcome.Bytes)}）",
-            _ => $"已删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）"
-                + (outcome.Directories > 0 ? $"、{outcome.Directories:N0} 个空文件夹" : ""),
-        };
-
-        return outcome.Cancelled ? (done + "，已取消", ConsoleColor.DarkYellow) : (done, ConsoleColor.Green);
-    }
+        OutcomeKind.Done => ConsoleColor.Green,
+        OutcomeKind.Warning => ConsoleColor.DarkYellow,
+        OutcomeKind.Refused => ConsoleColor.Red,
+        _ => ConsoleColor.DarkGray,
+    };
 
     private static string ExecuteCommand(CliOptions options)
     {

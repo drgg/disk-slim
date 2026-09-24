@@ -1,5 +1,6 @@
 using System.Globalization;
 using DiskSlim.Core.Formatting;
+using DiskSlim.Core.Presentation;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
 
@@ -9,19 +10,9 @@ internal static class RiskText
 {
     public static readonly IReadOnlyList<RiskLevel> Order = [RiskLevel.Low, RiskLevel.Medium, RiskLevel.High];
 
-    public static string Title(RiskLevel risk) => risk switch
-    {
-        RiskLevel.Low => "可放心清理",
-        RiskLevel.Medium => "需要确认",
-        _ => "仅供参考（不建议用工具清理）",
-    };
+    public static string Title(RiskLevel risk) => DisplayText.RiskTitle(risk);
 
-    public static string Short(RiskLevel risk) => risk switch
-    {
-        RiskLevel.Low => "可放心",
-        RiskLevel.Medium => "需确认",
-        _ => "仅参考",
-    };
+    public static string Short(RiskLevel risk) => DisplayText.RiskShort(risk);
 
     public static ConsoleColor Color(RiskLevel risk) => risk switch
     {
@@ -30,13 +21,7 @@ internal static class RiskText
         _ => ConsoleColor.Red,
     };
 
-    public static string Action(CleanupAction action) => action switch
-    {
-        CleanupAction.Delete => "永久删除",
-        CleanupAction.Recycle => "移到回收站",
-        CleanupAction.EmptyRecycleBin => "清空回收站",
-        _ => "只提示，不自动清理",
-    };
+    public static string Action(CleanupAction action) => DisplayText.ActionName(action);
 
     /// <summary>这一项怎么用 diskslim clean 清理；没有自动清理方式时返回 null。</summary>
     public static string? CleanHint(CleanupRule rule) => (rule.Action, rule.Risk) switch
@@ -46,9 +31,7 @@ internal static class RiskText
         _ => $"可自动清理：diskslim clean --rule {rule.Id}",
     };
 
-    /// <summary>“仅供参考”的项目不建议清理，所以只统计总大小，不算作可释放。</summary>
-    public static long CountedBytes(RuleResult result) =>
-        result.Rule.Risk == RiskLevel.High ? result.TotalBytes : result.ReclaimableBytes;
+    public static long CountedBytes(RuleResult result) => DisplayText.CountedBytes(result);
 }
 
 /// <summary>把扫描报告输出到控制台。</summary>

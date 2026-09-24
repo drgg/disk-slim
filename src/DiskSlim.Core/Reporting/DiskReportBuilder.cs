@@ -35,6 +35,9 @@ public sealed class DiskReportBuilder
     /// <summary>正在进行的空间分布扫描；不在扫描时为 null。</summary>
     public TreeScanner? MapScanner => _mapScanner;
 
+    /// <summary>最近一次空间分布扫描的完整目录树（报告里只有摘要），供图形界面逐层浏览。</summary>
+    public ScanResult? MapResult { get; private set; }
+
     public static string ToolVersion =>
         typeof(DiskReportBuilder).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
         ?? "0.0.0";
@@ -73,7 +76,8 @@ public sealed class DiskReportBuilder
             _mapScanner = scanner;
             try
             {
-                map = BuildSpaceMap(scanner.Scan(mapRoot, cancellationToken), options.TopCount);
+                MapResult = scanner.Scan(mapRoot, cancellationToken);
+                map = BuildSpaceMap(MapResult, options.TopCount);
             }
             finally
             {

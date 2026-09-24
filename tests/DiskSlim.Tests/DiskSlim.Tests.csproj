@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <IsPackable>false</IsPackable>
+    <!-- 引用图形界面项目以测试其视图模型 -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,11 +15,13 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="System.IO" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DiskSlim.Core\DiskSlim.Core.csproj" />
     <ProjectReference Include="..\..\src\DiskSlim.Cli\DiskSlim.Cli.csproj" />
+    <ProjectReference Include="..\..\src\DiskSlim.Desktop\DiskSlim.Desktop.csproj" />
   </ItemGroup>
 
 </Project>
