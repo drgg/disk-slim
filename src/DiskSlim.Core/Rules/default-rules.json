@@ -6,8 +6,14 @@
   // risk       low    = 可放心清理（缓存、临时文件，删除后会自动重建）
   //            medium = 需要确认（删除后要重新下载，或需要用户判断）
   //            high   = 仅供参考（用户数据或系统文件，不建议用工具清理）
-  // minAgeDays 只把 N 天前修改过的文件计为“可释放”。
-  // processes  这些程序运行时不宜清理（不带 .exe）。
+  // action     工具怎么清理（不写 = none）：
+  //            none              = 工具不清理，只给建议
+  //            delete            = 永久删除其中的文件（目录本身保留），适合缓存和临时文件
+  //            recycle           = 把文件移到回收站，适合用户文件
+  //            empty-recycle-bin = 清空回收站
+  //            risk 为 high 的规则不能设置 action。
+  // minAgeDays 只把 N 天前修改（或创建）过的文件计为“可释放”，清理时也只删这些文件。
+  // processes  这些程序运行时跳过这条规则（不带 .exe）。
   //
   // 同一个路径只算给第一条命中它的规则：具体的规则放前面，宽泛的规则放后面。
   "version": 1,
@@ -16,6 +22,7 @@
     {
       "id": "user-temp",
       "name": "用户临时文件",
+      "action": "delete",
       "category": "系统",
       "paths": ["%TEMP%"],
       "risk": "low",
@@ -25,6 +32,7 @@
     {
       "id": "windows-temp",
       "name": "Windows 临时文件",
+      "action": "delete",
       "category": "系统",
       "paths": ["%SystemRoot%/Temp"],
       "risk": "low",
@@ -50,6 +58,7 @@
     {
       "id": "error-reports",
       "name": "错误报告和崩溃转储",
+      "action": "delete",
       "category": "系统",
       "paths": [
         "%LOCALAPPDATA%/CrashDumps",
@@ -78,6 +87,7 @@
     {
       "id": "chrome-cache",
       "name": "Chrome 缓存",
+      "action": "delete",
       "category": "浏览器",
       "paths": [
         "%LOCALAPPDATA%/Google/Chrome/User Data/*/Cache",
@@ -91,6 +101,7 @@
     {
       "id": "edge-cache",
       "name": "Edge 缓存",
+      "action": "delete",
       "category": "浏览器",
       "paths": [
         "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/Cache",
@@ -104,6 +115,7 @@
     {
       "id": "firefox-cache",
       "name": "Firefox 缓存",
+      "action": "delete",
       "category": "浏览器",
       "paths": ["%LOCALAPPDATA%/Mozilla/Firefox/Profiles/*/cache2"],
       "risk": "low",
@@ -115,6 +127,7 @@
     {
       "id": "netease-cloudmusic-cache",
       "name": "网易云音乐缓存",
+      "action": "delete",
       "category": "应用",
       "paths": ["%LOCALAPPDATA%/NetEase/CloudMusic/Cache"],
       "risk": "low",
@@ -124,6 +137,7 @@
     {
       "id": "vscode-cache",
       "name": "VS Code 缓存",
+      "action": "delete",
       "category": "应用",
       "paths": [
         "%APPDATA%/Code/CachedExtensionVSIXs",
@@ -138,6 +152,7 @@
     {
       "id": "electron-web-cache",
       "name": "桌面软件的网页缓存",
+      "action": "delete",
       "category": "应用",
       "paths": [
         "%APPDATA%/*/Cache/Cache_Data",
@@ -147,12 +162,13 @@
         "%APPDATA%/*/DawnGraphiteCache",
         "%APPDATA%/*/DawnWebGPUCache"
       ],
-      "risk": "low",
-      "advice": "VS Code、百度网盘、Figma 等基于网页技术（Electron）的软件的缓存。先关闭对应软件再删除，删除后会自动重建。"
+      "risk": "medium",
+      "advice": "VS Code、百度网盘、Figma 等基于网页技术（Electron）的软件的缓存，删除后会自动重建。涉及多个软件，工具无法逐一判断它们是否在运行，请先关闭这些软件再点名清理。"
     },
     {
       "id": "jianying-cache",
       "name": "剪映缓存",
+      "action": "delete",
       "category": "应用",
       "paths": ["%LOCALAPPDATA%/JianyingPro/User Data/Cache"],
       "risk": "medium",
@@ -164,6 +180,7 @@
     {
       "id": "npm-cache",
       "name": "npm 缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/npm-cache", "%APPDATA%/npm-cache"],
       "risk": "low",
@@ -172,6 +189,7 @@
     {
       "id": "yarn-cache",
       "name": "Yarn 缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/Yarn/Cache"],
       "risk": "low",
@@ -188,6 +206,7 @@
     {
       "id": "pip-cache",
       "name": "pip 缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/pip/cache"],
       "risk": "low",
@@ -196,6 +215,7 @@
     {
       "id": "uv-cache",
       "name": "uv 缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/uv/cache"],
       "risk": "low",
@@ -204,6 +224,7 @@
     {
       "id": "conda-pkgs",
       "name": "Conda 包缓存",
+      "action": "delete",
       "category": "开发",
       "paths": [
         "%USERPROFILE%/anaconda3/pkgs",
@@ -216,6 +237,7 @@
     {
       "id": "nuget-http-cache",
       "name": "NuGet 下载缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/NuGet/v3-cache", "%LOCALAPPDATA%/NuGet/plugins-cache"],
       "risk": "low",
@@ -224,6 +246,7 @@
     {
       "id": "nuget-packages",
       "name": "NuGet 全局包目录",
+      "action": "delete",
       "category": "开发",
       "paths": ["%USERPROFILE%/.nuget/packages"],
       "risk": "medium",
@@ -232,6 +255,7 @@
     {
       "id": "gradle-caches",
       "name": "Gradle 缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%USERPROFILE%/.gradle/caches"],
       "risk": "medium",
@@ -240,6 +264,7 @@
     {
       "id": "maven-repository",
       "name": "Maven 本地仓库",
+      "action": "delete",
       "category": "开发",
       "paths": ["%USERPROFILE%/.m2/repository"],
       "risk": "medium",
@@ -248,6 +273,7 @@
     {
       "id": "go-build-cache",
       "name": "Go 编译缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/go-build"],
       "risk": "low",
@@ -256,6 +282,7 @@
     {
       "id": "cargo-registry-cache",
       "name": "Cargo 下载缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%USERPROFILE%/.cargo/registry/cache"],
       "risk": "low",
@@ -264,6 +291,7 @@
     {
       "id": "puccinialin",
       "name": "Python 构建用的 Rust 工具链",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/puccinialin"],
       "risk": "medium",
@@ -272,6 +300,7 @@
     {
       "id": "playwright-browsers",
       "name": "Playwright 浏览器",
+      "action": "delete",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/ms-playwright"],
       "risk": "medium",
@@ -280,6 +309,7 @@
     {
       "id": "huggingface-cache",
       "name": "Hugging Face 模型缓存",
+      "action": "delete",
       "category": "开发",
       "paths": ["%USERPROFILE%/.cache/huggingface"],
       "risk": "medium",
@@ -378,6 +408,7 @@
     {
       "id": "recycle-bin",
       "name": "回收站",
+      "action": "empty-recycle-bin",
       "category": "用户文件",
       "paths": ["::RecycleBin"],
       "risk": "medium",
@@ -386,6 +417,7 @@
     {
       "id": "downloads-installers",
       "name": "下载文件夹里的安装包",
+      "action": "recycle",
       "category": "用户文件",
       "paths": [
         "%USERPROFILE%/Downloads/*.exe",

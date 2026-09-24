@@ -14,6 +14,7 @@ namespace DiskSlim.Core.Serialization;
     WriteIndented = true)]
 [JsonSerializable(typeof(RuleSet))]
 [JsonSerializable(typeof(ScanReport))]
+[JsonSerializable(typeof(Cleaning.LogEntry))]
 internal sealed partial class DiskSlimJsonContext : JsonSerializerContext;
 
 public static class ReportJson

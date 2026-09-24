@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace DiskSlim.Core.Rules;
 
 /// <summary>清理风险等级。</summary>
-[JsonConverter(typeof(RiskLevelJsonConverter))]
+[JsonConverter(typeof(KebabCaseEnumConverter<RiskLevel>))]
 public enum RiskLevel
 {
     /// <summary>可放心清理：缓存、临时文件，删除后会自动重建。</summary>
@@ -17,19 +17,43 @@ public enum RiskLevel
     High,
 }
 
-/// <summary>读写 "low" / "medium" / "high"，读取时不区分大小写。</summary>
-internal sealed class RiskLevelJsonConverter : JsonConverter<RiskLevel>
+/// <summary>工具如何清理一条规则命中的内容。</summary>
+[JsonConverter(typeof(KebabCaseEnumConverter<CleanupAction>))]
+public enum CleanupAction
 {
-    public override RiskLevel Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    /// <summary>工具不清理，只给出建议（默认值，也是最安全的值）。</summary>
+    None = 0,
+
+    /// <summary>永久删除命中的文件，保留规则指定的目录本身。适合缓存和临时文件。</summary>
+    Delete,
+
+    /// <summary>把命中的文件移到回收站，可以找回。适合用户文件。</summary>
+    Recycle,
+
+    /// <summary>清空回收站，只能用于 <c>::RecycleBin</c>。</summary>
+    EmptyRecycleBin,
+}
+
+/// <summary>用短横线小写名称读写枚举（例如 EmptyRecycleBin ↔ "empty-recycle-bin"），读取时不区分大小写。</summary>
+internal sealed class KebabCaseEnumConverter<TEnum> : JsonConverter<TEnum>
+    where TEnum : struct, Enum
+{
+    private static readonly Dictionary<string, TEnum> ByName = Enum.GetValues<TEnum>()
+        .ToDictionary(v => ToKebabCase(v.ToString()), StringComparer.OrdinalIgnoreCase);
+
+    public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         var text = reader.TokenType == JsonTokenType.String ? reader.GetString() : null;
-        return Enum.TryParse<RiskLevel>(text, ignoreCase: true, out var risk) && Enum.IsDefined(risk) && !int.TryParse(text, out _)
-            ? risk
-            : throw new JsonException($"risk 只能是 low、medium 或 high，而不是 {text ?? reader.TokenType.ToString()}");
+        return text is not null && ByName.TryGetValue(text, out var value)
+            ? value
+            : throw new JsonException($"只能是 {string.Join("、", ByName.Keys)} 之一，而不是 {text ?? reader.TokenType.ToString()}");
     }
 
-    public override void Write(Utf8JsonWriter writer, RiskLevel value, JsonSerializerOptions options) =>
-        writer.WriteStringValue(value.ToString().ToLowerInvariant());
+    public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(ToKebabCase(value.ToString()));
+
+    internal static string ToKebabCase(string name) =>
+        string.Concat(name.Select((c, i) => char.IsUpper(c) ? (i > 0 ? "-" : "") + char.ToLowerInvariant(c) : c.ToString()));
 }
 
 /// <summary>一条清理规则：描述某一类可以清理的内容在哪里、有多安全、应该怎么清理。</summary>
@@ -51,7 +75,12 @@ public sealed record CleanupRule
     /// <summary>必填：清理工具不能替规则作者假定一个风险等级。</summary>
     public required RiskLevel Risk { get; init; }
 
-    /// <summary>只把至少这么多天前修改过的文件计为“可释放”；为空时全部计入。</summary>
+    /// <summary>工具如何清理；不写就是 <see cref="CleanupAction.None"/>，工具只给建议。</summary>
+    public CleanupAction Action { get; init; }
+
+    /// <summary>
+    /// 只把至少这么多天前修改（或创建）过的文件计为“可释放”，清理时也只删除这些文件；为空时全部计入。
+    /// </summary>
     public int? MinAgeDays { get; init; }
 
     /// <summary>这些程序运行时不宜清理（进程名，可带或不带 .exe）。</summary>

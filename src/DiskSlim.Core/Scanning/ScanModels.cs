@@ -4,8 +4,13 @@ namespace DiskSlim.Core.Scanning;
 
 public sealed record ScanOptions
 {
-    /// <summary>早于这个时间最后修改的文件计为“可释放”；为 null 时所有文件都计入。</summary>
+    /// <summary>早于这个时间修改（或创建）的文件计为“可释放”，见 <see cref="Rules.FileAge"/>；为 null 时所有文件都计入。</summary>
     public DateTimeOffset? ReclaimableBefore { get; init; }
+
+    /// <summary>
+    /// 为 true 时，只读和系统文件不计为“可释放”——清理时它们会被保留，这样统计结果和实际清理一致。
+    /// </summary>
+    public bool ProtectedFilesAreNotReclaimable { get; init; }
 
     /// <summary>记录最大的多少个文件；0 表示不记录。</summary>
     public int LargestFileCount { get; init; }

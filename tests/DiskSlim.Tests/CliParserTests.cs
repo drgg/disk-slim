@@ -56,6 +56,40 @@ public sealed class CliParserTests
     }
 
     [Fact]
+    public void Parses_the_clean_command()
+    {
+        var options = CliParser.Parse(["clean", "--rule", "npm-cache,pip-cache", "--rule", "NPM-CACHE", "--rule=recycle-bin", "--execute", "-y", "--log", "x.jsonl"]).Options!;
+
+        Assert.Equal(CliCommand.Clean, options.Command);
+        Assert.Equal(["npm-cache", "pip-cache", "recycle-bin"], options.RuleIds);
+        Assert.True(options.Execute);
+        Assert.True(options.AssumeYes);
+        Assert.Equal("x.jsonl", options.LogPath);
+    }
+
+    [Fact]
+    public void Clean_defaults_to_dry_run()
+    {
+        var options = CliParser.Parse(["clean"]).Options!;
+
+        Assert.False(options.Execute);
+        Assert.Empty(options.RuleIds);
+    }
+
+    [Theory]
+    [InlineData("clean", "--top", "5")] // 只能用于 scan
+    [InlineData("clean", "--json", "a.json")]
+    [InlineData("--execute")] // 只能用于 clean
+    [InlineData("scan", "--rule", "x")]
+    [InlineData("clean", "--yes")] // --yes 必须和 --execute 一起用
+    [InlineData("clean", "--rule")]
+    [InlineData("clean", "--rule", ",")]
+    public void Rejects_options_for_the_wrong_command(params string[] args)
+    {
+        Assert.NotNull(CliParser.Parse(args).Error);
+    }
+
+    [Fact]
     public void Help_and_version_flags()
     {
         Assert.True(CliParser.Parse(["-h"]).Options!.ShowHelp);

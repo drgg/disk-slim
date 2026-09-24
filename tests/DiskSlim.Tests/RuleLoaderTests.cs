@@ -66,6 +66,48 @@ public sealed class RuleLoaderTests
     }
 
     [Fact]
+    public void Default_rules_never_let_the_tool_clean_high_risk_items()
+    {
+        var rules = RuleLoader.LoadDefault().Rules;
+
+        Assert.All(rules.Where(r => r.Risk == RiskLevel.High), r => Assert.Equal(CleanupAction.None, r.Action));
+        Assert.Equal(CleanupAction.EmptyRecycleBin, rules.Single(r => r.Id == "recycle-bin").Action);
+        Assert.Equal(CleanupAction.Recycle, rules.Single(r => r.Id == "downloads-installers").Action);
+        Assert.Contains(rules, r => r.Risk == RiskLevel.Low && r.Action == CleanupAction.Delete);
+    }
+
+    [Theory]
+    [InlineData("delete", CleanupAction.Delete)]
+    [InlineData("Recycle", CleanupAction.Recycle)]
+    [InlineData("empty-recycle-bin", CleanupAction.EmptyRecycleBin)]
+    public void Parses_actions(string text, CleanupAction expected)
+    {
+        var path = expected == CleanupAction.EmptyRecycleBin ? "::RecycleBin" : "x";
+        var set = LoadText($$"""{ "rules": [ { "id": "a", "name": "A", "paths": ["{{path}}"], "risk": "low", "action": "{{text}}" } ] }""");
+
+        Assert.Equal(expected, set.Rules[0].Action);
+    }
+
+    [Fact]
+    public void Action_defaults_to_none()
+    {
+        var set = LoadText("""{ "rules": [ { "id": "a", "name": "A", "paths": ["x"], "risk": "low" } ] }""");
+
+        Assert.Equal(CleanupAction.None, set.Rules[0].Action);
+    }
+
+    [Theory]
+    [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["x"], "risk": "high", "action": "delete" } ] }""", "不能设置 action")]
+    [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["C:/x"], "risk": "medium", "action": "empty-recycle-bin" } ] }""", "只能是 ::RecycleBin")]
+    [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["::RecycleBin"], "risk": "medium", "action": "delete" } ] }""", "回收站只能用 empty-recycle-bin")]
+    public void Rejects_unsafe_actions(string json, string expectedMessage)
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => LoadText(json));
+
+        Assert.Contains(expectedMessage, ex.Message);
+    }
+
+    [Fact]
     public void Writes_risk_levels_in_lower_case()
     {
         var json = System.Text.Json.JsonSerializer.Serialize(RiskLevel.Medium, DiskSlim.Core.Serialization.DiskSlimJsonContext.Default.Options);

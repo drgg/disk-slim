@@ -28,15 +28,15 @@ public sealed record RuleResult
 /// 按顺序评估规则，统计每条规则能释放多少空间。只读取，不删除。
 /// </summary>
 /// <remarks>
-/// 同一个路径只归属于第一条命中它的规则；后面的规则如果命中了它的上级目录，会扣掉这部分，保证各项相加不会重复计算。
-/// 因此规则文件里应该把具体的规则放在前面、宽泛的规则放在后面。
+/// 同一个路径只归属于第一条命中它的规则（见 <see cref="RuleMatcher"/>）；后面的规则如果命中了它的上级目录，
+/// 会扣掉这部分，保证各项相加不会重复计算。因此规则文件里应该把具体的规则放在前面、宽泛的规则放在后面。
 /// </remarks>
 public sealed class RuleEvaluator
 {
     private readonly string _driveRoot;
     private readonly IReadOnlySet<string> _runningProcesses;
     private readonly TimeProvider _time;
-    private readonly List<Claim> _claims = [];
+    private readonly RuleMatcher _matcher;
 
     /// <param name="driveRoot">只统计位于这个磁盘上的路径，例如 <c>C:\</c>。</param>
     /// <param name="runningProcesses">当前运行的进程名；为 null 时不检查。</param>
@@ -45,80 +45,75 @@ public sealed class RuleEvaluator
         _driveRoot = driveRoot;
         _runningProcesses = runningProcesses ?? new HashSet<string>();
         _time = time ?? TimeProvider.System;
+        _matcher = new RuleMatcher(driveRoot);
     }
 
     public RuleResult Evaluate(CleanupRule rule, CancellationToken cancellationToken = default)
     {
-        DateTimeOffset? cutoff = rule.MinAgeDays is > 0 and var days
-            ? _time.GetUtcNow() - TimeSpan.FromDays(days)
-            : null;
-
+        var cutoff = FileAge.Cutoff(rule.MinAgeDays, _time);
         var matches = new List<RuleMatch>();
-        foreach (var pattern in rule.Paths)
+
+        if (rule.Paths.Any(PathExpander.IsRecycleBin)
+            && RecycleBin.Query(_driveRoot) is { } bin && (bin.Bytes > 0 || bin.ItemCount > 0))
+        {
+            matches.Add(new RuleMatch($"回收站（{_driveRoot}）", bin.Bytes, bin.Bytes, bin.ItemCount, 0));
+        }
+
+        foreach (var target in _matcher.Match(rule))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (PathExpander.IsRecycleBin(pattern))
-            {
-                if (RecycleBin.Query(_driveRoot) is { } bin && (bin.Bytes > 0 || bin.ItemCount > 0))
-                {
-                    matches.Add(new RuleMatch($"回收站（{_driveRoot}）", bin.Bytes, bin.Bytes, bin.ItemCount, 0));
-                }
-
-                continue;
-            }
-
-            foreach (var path in PathExpander.Expand(pattern))
-            {
-                if (!PathExpander.IsSameOrInside(path, _driveRoot) || IsClaimed(path))
-                {
-                    continue;
-                }
-
-                matches.Add(Measure(path, cutoff, cancellationToken));
-            }
+            matches.Add(Measure(target, cutoff, rule.Action is CleanupAction.Delete or CleanupAction.Recycle, cancellationToken));
         }
 
-        var running = rule.Processes
-            .Select(p => p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? p[..^4] : p)
-            .Where(_runningProcesses.Contains)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return new RuleResult { Rule = rule, Matches = matches, RunningProcesses = running };
+        return new RuleResult { Rule = rule, Matches = matches, RunningProcesses = RunningOf(rule, _runningProcesses) };
     }
 
-    private bool IsClaimed(string path) => _claims.Any(c => PathExpander.IsSameOrInside(path, c.Path));
+    /// <summary>规则列出的进程中正在运行的那些。</summary>
+    public static IReadOnlyList<string> RunningOf(CleanupRule rule, IReadOnlySet<string> runningProcesses) => rule.Processes
+        .Select(p => p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? p[..^4] : p)
+        .Where(runningProcesses.Contains)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
-    private RuleMatch Measure(string path, DateTimeOffset? cutoff, CancellationToken cancellationToken)
+    /// <param name="toolCleans">规则由工具清理时，只读和系统文件会被保留，不计为可释放。</param>
+    private static RuleMatch Measure(MatchedTarget target, DateTimeOffset? cutoff, bool toolCleans, CancellationToken cancellationToken)
     {
-        if (File.Exists(path))
+        bool IsReclaimable(FileInfo file) =>
+            FileAge.IsOlderThan(file, cutoff) && !(toolCleans && (file.Attributes & TreeScanner.ProtectedMask) != 0);
+
+        if (target.IsFile)
         {
-            var file = new FileInfo(path);
-            var length = file.Length;
-            var lastWrite = new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero);
-            _claims.Add(new Claim(path, IsFile: true, length, lastWrite));
-            return new RuleMatch(path, length, IsReclaimable(lastWrite, cutoff) ? length : 0, 1, 0);
+            var file = new FileInfo(target.Path);
+            if (!file.Exists)
+            {
+                return new RuleMatch(target.Path, 0, 0, 0, 0);
+            }
+
+            return new RuleMatch(target.Path, file.Length, IsReclaimable(file) ? file.Length : 0, 1, 0);
         }
 
-        var result = new TreeScanner(new ScanOptions { ReclaimableBefore = cutoff }).Scan(path, cancellationToken);
+        var options = new ScanOptions { ReclaimableBefore = cutoff, ProtectedFilesAreNotReclaimable = toolCleans };
+        var result = new TreeScanner(options).Scan(target.Path, cancellationToken);
         var root = result.Root;
         long total = root.TotalBytes, reclaimable = root.TotalReclaimableBytes, files = root.TotalFileCount;
 
-        // 扣掉已经归属于前面规则的子路径。只扣最外层的：内层的已经包含在外层目录的扫描结果里。
-        var inside = _claims.Where(c => PathExpander.IsSameOrInside(c.Path, path)).ToList();
-        var outermost = inside.Where(c => !inside.Any(o => !o.IsFile && o != c && PathExpander.IsSameOrInside(c.Path, o.Path)));
-        foreach (var claim in outermost)
+        // 扣掉已经归属于前面规则的子路径。
+        foreach (var excluded in target.Exclusions)
         {
-            if (claim.IsFile)
+            if (excluded.IsFile)
             {
-                total -= claim.Bytes;
-                files--;
-                if (IsReclaimable(claim.LastWriteTimeUtc, cutoff))
+                var file = new FileInfo(excluded.Path);
+                if (file.Exists && (file.Attributes & TreeScanner.CloudOnlyMask) == 0)
                 {
-                    reclaimable -= claim.Bytes;
+                    total -= file.Length;
+                    files--;
+                    if (IsReclaimable(file))
+                    {
+                        reclaimable -= file.Length;
+                    }
                 }
             }
-            else if (root.FindDescendant(claim.Path) is { } node)
+            else if (root.FindDescendant(excluded.Path) is { } node)
             {
                 total -= node.TotalBytes;
                 reclaimable -= node.TotalReclaimableBytes;
@@ -126,12 +121,6 @@ public sealed class RuleEvaluator
             }
         }
 
-        _claims.Add(new Claim(path, IsFile: false, 0, default));
-        return new RuleMatch(path, total, reclaimable, files, result.Stats.InaccessibleDirectories);
+        return new RuleMatch(target.Path, Math.Max(0, total), Math.Max(0, reclaimable), Math.Max(0, files), result.Stats.InaccessibleDirectories);
     }
-
-    private static bool IsReclaimable(DateTimeOffset lastWriteUtc, DateTimeOffset? cutoff) =>
-        cutoff is not { } c || lastWriteUtc < c;
-
-    private sealed record Claim(string Path, bool IsFile, long Bytes, DateTimeOffset LastWriteTimeUtc);
 }

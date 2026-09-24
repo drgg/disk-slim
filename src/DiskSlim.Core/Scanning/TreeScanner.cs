@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Enumeration;
+using DiskSlim.Core.Rules;
 
 namespace DiskSlim.Core.Scanning;
 
@@ -23,6 +24,9 @@ public sealed class TreeScanner
 
     /// <summary>带有这些属性的文件或目录内容不在本地。</summary>
     internal const FileAttributes CloudOnlyMask = FileAttributes.Offline | RecallOnOpen | RecallOnDataAccess;
+
+    /// <summary>清理时会保留的文件属性。</summary>
+    internal const FileAttributes ProtectedMask = FileAttributes.ReadOnly | FileAttributes.System;
 
     private readonly ScanOptions _options;
     private long _liveDirectories;
@@ -148,7 +152,8 @@ internal sealed class ScanRun : IDisposable
         var length = entry.Length;
         node.OwnBytes += length;
         node.OwnFileCount++;
-        if (_reclaimableBefore is not { } cutoff || entry.LastWriteTimeUtc < cutoff)
+        if (FileAge.IsOlderThan(entry.LastWriteTimeUtc, entry.CreationTimeUtc, _reclaimableBefore)
+            && !(_options.ProtectedFilesAreNotReclaimable && (entry.Attributes & TreeScanner.ProtectedMask) != 0))
         {
             node.OwnReclaimableBytes += length;
         }

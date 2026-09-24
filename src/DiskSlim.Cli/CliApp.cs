@@ -1,11 +1,19 @@
 using System.Diagnostics;
-using System.Text;
-using DiskSlim.Core.Formatting;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
-using DiskSlim.Core.Serialization;
 
 namespace DiskSlim.Cli;
+
+/// <summary>命令行运行时需要的输入输出和共享设置。</summary>
+internal sealed record CliContext(
+    CliOptions Options,
+    RuleSet Rules,
+    ConsoleStyle Style,
+    TextWriter Stderr,
+    TextReader Stdin,
+    bool Interactive,
+    int Width,
+    CancellationToken CancellationToken);
 
 internal static class CliApp
 {
@@ -14,7 +22,8 @@ internal static class CliApp
     public const int ExitUsage = 2;
     public const int ExitCancelled = 130;
 
-    public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
+    /// <param name="interactive">能否向用户提问确认；为 null 时根据标准输入是否被重定向判断。</param>
+    public static int Run(string[] args, TextWriter stdout, TextWriter stderr, TextReader stdin, bool? interactive = null)
     {
         var parsed = CliParser.Parse(args);
         if (parsed.Error is { } error)
@@ -63,49 +72,31 @@ internal static class CliApp
             return ExitError;
         }
 
-        var reportOptions = new ReportOptions
+        using var cts = new CancellationTokenSource();
+        ConsoleCancelEventHandler onCancel = (_, e) =>
         {
-            DriveRoot = options.DriveRoot,
-            TopCount = options.Top,
-            Rules = rules,
-            IncludeRules = options.IncludeRules,
-            IncludeSpaceMap = options.IncludeSpaceMap,
+            // 不直接结束进程：让清理把当前文件处理完、写好日志再停下。
+            e.Cancel = true;
+            cts.Cancel();
         };
-
-        ScanReport report;
-        using (var cts = new CancellationTokenSource())
+        Console.CancelKeyPress += onCancel;
+        try
         {
-            ConsoleCancelEventHandler onCancel = (_, e) =>
-            {
-                e.Cancel = true;
-                cts.Cancel();
-            };
-            Console.CancelKeyPress += onCancel;
-            try
-            {
-                report = BuildWithProgress(reportOptions, stderr, width, cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                stderr.WriteLine("已取消。");
-                return ExitCancelled;
-            }
-            finally
-            {
-                Console.CancelKeyPress -= onCancel;
-            }
+            var context = new CliContext(options, rules, style, stderr, stdin, interactive ?? !Console.IsInputRedirected, width, cts.Token);
+            return options.Command == CliCommand.Clean ? CleanCommand.Run(context) : ScanCommand.Run(context);
         }
-
-        new ConsoleReportRenderer(style, width, options.Verbose).Render(report);
-        return SaveReports(report, options, style, stderr);
+        finally
+        {
+            Console.CancelKeyPress -= onCancel;
+        }
     }
 
-    private static ScanReport BuildWithProgress(ReportOptions options, TextWriter stderr, int width, CancellationToken cancellationToken)
+    /// <summary>在后台执行 <paramref name="work"/>，同时在标准错误上刷新进度。</summary>
+    internal static T RunWithProgress<T>(Func<T> work, Func<TimeSpan, string> describe, CliContext context)
     {
-        var builder = new DiskReportBuilder();
-        var task = Task.Run(() => builder.Build(options, cancellationToken), cancellationToken);
+        var task = Task.Run(work);
         var showProgress = !Console.IsErrorRedirected;
-        var progress = new ProgressDisplay(stderr, width);
+        var progress = new ProgressDisplay(context.Stderr, context.Width);
         var stopwatch = Stopwatch.StartNew();
         try
         {
@@ -113,7 +104,7 @@ internal static class CliApp
             {
                 if (showProgress)
                 {
-                    progress.Update(DescribeProgress(builder, stopwatch.Elapsed));
+                    progress.Update(describe(stopwatch.Elapsed) + $" · {stopwatch.Elapsed:mm\\:ss}（Ctrl+C 取消）");
                 }
             }
         }
@@ -128,45 +119,6 @@ internal static class CliApp
         return task.GetAwaiter().GetResult();
     }
 
-    private static string DescribeProgress(DiskReportBuilder builder, TimeSpan elapsed)
-    {
-        var text = new StringBuilder(builder.Stage);
-        if (builder.MapScanner is { } scanner)
-        {
-            text.Append($" · {scanner.FilesScanned:N0} 个文件 · {ByteSize.Format(scanner.BytesScanned)}");
-        }
-
-        text.Append($" · {elapsed:mm\\:ss}（Ctrl+C 取消）");
-        return text.ToString();
-    }
-
-    private static int SaveReports(ScanReport report, CliOptions options, ConsoleStyle style, TextWriter stderr)
-    {
-        try
-        {
-            if (options.JsonPath is { } jsonPath)
-            {
-                using var stream = File.Create(jsonPath);
-                ReportJson.Write(report, stream);
-                style.WriteLine($"JSON 报告已保存：{Path.GetFullPath(jsonPath)}", ConsoleColor.DarkGray);
-            }
-
-            if (options.MarkdownPath is { } mdPath)
-            {
-                using var writer = new StreamWriter(mdPath, append: false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-                MarkdownReportWriter.Write(report, writer);
-                style.WriteLine($"Markdown 报告已保存：{Path.GetFullPath(mdPath)}", ConsoleColor.DarkGray);
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            stderr.WriteLine($"保存报告失败：{ex.Message}");
-            return ExitError;
-        }
-
-        return ExitOk;
-    }
-
     private static void RenderRuleList(RuleSet rules, string source, ConsoleStyle style, int width)
     {
         style.WriteLine($"共 {rules.Rules.Count} 条规则（{source}），按评估顺序列出：", ConsoleColor.White);
@@ -175,7 +127,13 @@ internal static class CliApp
             style.WriteLine();
             style.Write($"  [{RiskText.Short(rule.Risk)}] ", RiskText.Color(rule.Risk));
             style.Write(rule.Name);
-            style.WriteLine($"  {rule.Id} · {rule.Category}" + (rule.MinAgeDays is > 0 ? $" · 只计入 {rule.MinAgeDays} 天前的文件" : ""), ConsoleColor.DarkGray);
+            var details = new List<string> { rule.Id, rule.Category, RiskText.Action(rule.Action) };
+            if (rule.MinAgeDays is > 0)
+            {
+                details.Add($"只处理 {rule.MinAgeDays} 天前的文件");
+            }
+
+            style.WriteLine("  " + string.Join(" · ", details), ConsoleColor.DarkGray);
             foreach (var path in rule.Paths)
             {
                 style.WriteLine("      " + TextWidth.TruncateMiddle(path, Math.Max(20, width - 8)), ConsoleColor.DarkGray);

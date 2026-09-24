@@ -1,0 +1,293 @@
+using System.Globalization;
+using DiskSlim.Core.Cleaning;
+using DiskSlim.Core.Formatting;
+using DiskSlim.Core.Platform;
+using DiskSlim.Core.Reporting;
+using DiskSlim.Core.Rules;
+
+namespace DiskSlim.Cli;
+
+/// <summary>输出 diskslim clean 的计划、确认提示和结果。</summary>
+internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
+{
+    private const int NumberColumn = 11;
+    private const int MethodColumn = 12;
+
+    public void RenderHeader(bool execute, string driveRoot, bool elevated)
+    {
+        w.Write($"DiskSlim 硬盘瘦身 v{DiskReportBuilder.ToolVersion}", ConsoleColor.White);
+        w.WriteLine(execute ? "  ·  清理" : "  ·  清理（模拟运行，不会删除任何文件）", execute ? ConsoleColor.Yellow : ConsoleColor.DarkGray);
+        var free = new DriveInfo(driveRoot).TotalFreeSpace;
+        w.WriteLine($"{driveRoot}  剩余 {ByteSize.Format(free)}  ·  管理员权限：{(elevated ? "是" : "否")}", ConsoleColor.DarkGray);
+    }
+
+    public void RenderPlan(CleanupPlan plan, CleanupResult preview)
+    {
+        Section("清理计划", $"选中 {plan.Rules.Count} 项");
+        if (plan.Rules.Count == 0)
+        {
+            w.WriteLine("  没有选中任何项目。");
+            return;
+        }
+
+        var nameWidth = Math.Clamp(plan.Rules.Max(r => TextWidth.Of(r.Rule.Name)), 12, 28);
+        foreach (var risk in new[] { RiskLevel.Low, RiskLevel.Medium })
+        {
+            var outcomes = preview.Rules.Where(o => o.Rule.Risk == risk).ToList();
+            if (outcomes.Count == 0)
+            {
+                continue;
+            }
+
+            w.WriteLine();
+            w.WriteLine($"  ● {RiskText.Title(risk)}{(risk == RiskLevel.Medium ? "（已点名）" : "")}", RiskText.Color(risk));
+            w.WriteLine("    " + TextWidth.PadRight("项目", nameWidth) + "  " + TextWidth.PadRight("方式", MethodColumn)
+                + TextWidth.PadLeft("文件数", NumberColumn) + TextWidth.PadLeft("大小", NumberColumn), ConsoleColor.DarkGray);
+            foreach (var outcome in outcomes)
+            {
+                RenderPlannedRule(outcome, nameWidth);
+            }
+        }
+
+        RenderPlanTotals(preview);
+    }
+
+    public void RenderDryRunFooter(CleanupPlan plan, CliOptions options)
+    {
+        var available = plan.Available.Where(r => r.Risk == RiskLevel.Medium || options.RuleIds.Count > 0).ToList();
+        if (available.Count > 0)
+        {
+            w.WriteLine();
+            w.WriteLine("  还可以点名清理这些项目（用 --rule 选择）：", ConsoleColor.DarkGray);
+            var idWidth = available.Max(r => r.Id.Length) + 2;
+            var nameWidth = Math.Min(available.Max(r => TextWidth.Of(r.Name)), 30) + 2;
+            foreach (var rule in available)
+            {
+                w.Write("    " + rule.Id.PadRight(idWidth));
+                w.Write(TextWidth.PadRight(TextWidth.Truncate(rule.Name, nameWidth - 2), nameWidth));
+                w.WriteLine($"[{RiskText.Short(rule.Risk)}] {RiskText.Action(rule.Action)}", ConsoleColor.DarkGray);
+            }
+        }
+
+        w.WriteLine();
+        w.WriteLine("  这是模拟运行，没有删除任何文件。确认无误后运行：", ConsoleColor.Cyan);
+        w.WriteLine("    " + ExecuteCommand(options), ConsoleColor.White);
+        w.WriteLine();
+    }
+
+    public string ConfirmPrompt(CleanupResult preview)
+    {
+        var parts = new List<string>();
+        if (preview.DeletedFiles > 0)
+        {
+            parts.Add($"永久删除 {preview.DeletedFiles:N0} 项（{ByteSize.Format(preview.DeletedBytes)}）");
+        }
+
+        if (preview.RecycledFiles > 0)
+        {
+            parts.Add($"把 {preview.RecycledFiles:N0} 个文件移到回收站（{ByteSize.Format(preview.RecycledBytes)}）");
+        }
+
+        return $"  将要{string.Join("，", parts)}。永久删除的内容无法恢复。确定执行吗？输入 y 确认，其他任意键取消：";
+    }
+
+    public void RenderResult(CleanupResult result)
+    {
+        Section("清理结果", result.Cancelled ? "已取消（已完成的部分见日志）" : null);
+        var nameWidth = Math.Clamp(result.Rules.Count == 0 ? 12 : result.Rules.Max(r => TextWidth.Of(r.Rule.Name)), 12, 28);
+        foreach (var outcome in result.Rules)
+        {
+            w.Write("    " + TextWidth.PadRight(TextWidth.Truncate(outcome.Rule.Name, nameWidth), nameWidth) + "  ");
+            var (text, color) = ResultText(outcome);
+            w.WriteLine(text, color);
+            RenderDetails(outcome, executed: true);
+        }
+
+        var freed = result.FreeBytesAfter - result.FreeBytesBefore;
+        w.WriteLine();
+        w.Write("  磁盘剩余空间：", ConsoleColor.White);
+        w.Write($"{ByteSize.Format(result.FreeBytesBefore)} → {ByteSize.Format(result.FreeBytesAfter)}");
+        w.WriteLine(freed >= 0 ? $"（增加 {ByteSize.Format(freed)}）" : $"（减少 {ByteSize.Format(-freed)}，可能有其他程序同时在写入）", freed > 0 ? ConsoleColor.Green : ConsoleColor.DarkGray);
+        if (result.RecycledBytes > 0)
+        {
+            w.WriteLine($"  另有 {ByteSize.Format(result.RecycledBytes)} 移到了回收站，清空回收站后才会释放空间。", ConsoleColor.DarkGray);
+        }
+
+        if (result.LogPath is { } logPath)
+        {
+            w.WriteLine($"  操作日志：{logPath}", ConsoleColor.DarkGray);
+        }
+
+        w.WriteLine();
+    }
+
+    private void RenderPlannedRule(RuleOutcome outcome, int nameWidth)
+    {
+        var planned = outcome.Planned;
+        w.Write("    " + TextWidth.PadRight(TextWidth.Truncate(outcome.Rule.Name, nameWidth), nameWidth) + "  ");
+
+        switch (planned.Status)
+        {
+            case PlanStatus.ProcessRunning:
+                w.WriteLine($"跳过：{string.Join("、", planned.RunningProcesses)} 正在运行，请先关闭", ConsoleColor.DarkYellow);
+                return;
+
+            case PlanStatus.NothingFound:
+                w.WriteLine("没有找到需要清理的内容", ConsoleColor.DarkGray);
+                return;
+
+            case PlanStatus.Forbidden:
+                w.WriteLine("拒绝执行：目标位于受保护的位置", ConsoleColor.Red);
+                foreach (var problem in planned.Problems)
+                {
+                    w.WriteLine("      " + problem, ConsoleColor.Red);
+                }
+
+                return;
+        }
+
+        if (outcome.Files == 0 && outcome.Failed == 0)
+        {
+            w.WriteLine("没有需要清理的内容" + (outcome.SkippedTotal > 0 ? $"（{outcome.SkippedTotal:N0} 个文件不满足条件）" : ""), ConsoleColor.DarkGray);
+            RenderDetails(outcome, executed: false);
+            return;
+        }
+
+        if (outcome.Files == 0)
+        {
+            w.WriteLine("无法处理", ConsoleColor.DarkYellow);
+            RenderDetails(outcome, executed: false);
+            return;
+        }
+
+        w.WriteLine(TextWidth.PadRight(RiskText.Action(outcome.Rule.Action), MethodColumn)
+            + TextWidth.PadLeft(outcome.Files.ToString("N0", CultureInfo.InvariantCulture), NumberColumn)
+            + TextWidth.PadLeft(ByteSize.Format(outcome.Bytes), NumberColumn));
+        RenderDetails(outcome, executed: false);
+    }
+
+    /// <summary>跳过、失败的原因和明细。</summary>
+    private void RenderDetails(RuleOutcome outcome, bool executed)
+    {
+        var skipped = new List<string>();
+        if (outcome.SkippedTooNew > 0)
+        {
+            skipped.Add($"{outcome.SkippedTooNew:N0} 个太新（{outcome.Rule.MinAgeDays} 天内）");
+        }
+
+        if (outcome.SkippedProtected > 0)
+        {
+            skipped.Add($"{outcome.SkippedProtected:N0} 个只读或系统文件");
+        }
+
+        if (outcome.SkippedLinks > 0)
+        {
+            skipped.Add($"{outcome.SkippedLinks:N0} 个链接或云盘文件");
+        }
+
+        if (skipped.Count > 0 && (outcome.Files > 0 || outcome.Failed > 0))
+        {
+            w.WriteLine("      保留：" + string.Join("，", skipped), ConsoleColor.DarkGray);
+        }
+
+        if (outcome.Failed > 0)
+        {
+            var reasons = outcome.Failures.GroupBy(f => f.Reason).OrderByDescending(g => g.Count()).Select(g => g.Key).Take(2);
+            var verb = executed ? "未能处理" : "无法处理";
+            w.WriteLine($"      {verb} {outcome.Failed:N0} 项：{string.Join("；", reasons)}"
+                + (reasons.Any(r => r.Contains("权限")) ? "（以管理员身份运行可以处理更多）" : ""), ConsoleColor.DarkYellow);
+            if (verbose)
+            {
+                foreach (var failure in outcome.Failures.Take(10))
+                {
+                    w.WriteLine($"        {TextWidth.TruncateMiddle(failure.Path, Math.Max(20, width - 30))}  {failure.Reason}", ConsoleColor.DarkGray);
+                }
+            }
+        }
+
+        if (verbose && !executed)
+        {
+            foreach (var target in outcome.Planned.Targets.Take(8))
+            {
+                w.WriteLine("        " + TextWidth.TruncateMiddle(target.Path, Math.Max(20, width - 10)), ConsoleColor.DarkGray);
+            }
+        }
+    }
+
+    private void RenderPlanTotals(CleanupResult preview)
+    {
+        var total = preview.DeletedBytes + preview.RecycledBytes;
+        Section("合计", $"预计处理 {ByteSize.Format(total)}");
+        if (preview.DeletedFiles > 0)
+        {
+            w.WriteLine($"  永久删除 {preview.DeletedFiles:N0} 项，释放 {ByteSize.Format(preview.DeletedBytes)}");
+        }
+
+        if (preview.RecycledFiles > 0)
+        {
+            w.WriteLine($"  移到回收站 {preview.RecycledFiles:N0} 个文件（{ByteSize.Format(preview.RecycledBytes)}），可以找回；清空回收站后才会释放空间");
+        }
+
+        if (total > 0)
+        {
+            w.WriteLine("  正在被使用的文件在执行时会自动跳过，实际释放的空间可能略少。", ConsoleColor.DarkGray);
+        }
+    }
+
+    private static (string Text, ConsoleColor? Color) ResultText(RuleOutcome outcome)
+    {
+        if (outcome.Planned.Status == PlanStatus.ProcessRunning)
+        {
+            return ($"跳过：{string.Join("、", outcome.Planned.RunningProcesses)} 正在运行", ConsoleColor.DarkYellow);
+        }
+
+        if (outcome.Planned.Status == PlanStatus.Forbidden)
+        {
+            return ("拒绝执行：目标位于受保护的位置", ConsoleColor.Red);
+        }
+
+        if (outcome.Planned.Status == PlanStatus.NothingFound || (outcome.Files == 0 && outcome.Failed == 0 && !outcome.Cancelled))
+        {
+            return ("没有需要清理的内容", ConsoleColor.DarkGray);
+        }
+
+        var done = outcome.Rule.Action switch
+        {
+            CleanupAction.Recycle => $"已移到回收站 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
+            CleanupAction.EmptyRecycleBin => $"已清空 {outcome.Files:N0} 项（{ByteSize.Format(outcome.Bytes)}）",
+            _ => $"已删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）"
+                + (outcome.Directories > 0 ? $"、{outcome.Directories:N0} 个空文件夹" : ""),
+        };
+
+        return outcome.Cancelled ? (done + "，已取消", ConsoleColor.DarkYellow) : (done, ConsoleColor.Green);
+    }
+
+    private static string ExecuteCommand(CliOptions options)
+    {
+        var parts = new List<string> { "diskslim clean" };
+        if (!string.Equals(options.DriveRoot, SystemInfo.SystemDriveRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            parts.Add($"-d {options.DriveRoot[0]}");
+        }
+
+        if (options.RulesFile is { } rulesFile)
+        {
+            parts.Add($"--rules \"{rulesFile}\"");
+        }
+
+        if (options.RuleIds.Count > 0)
+        {
+            parts.Add("--rule " + string.Join(",", options.RuleIds));
+        }
+
+        parts.Add("--execute");
+        return string.Join(" ", parts);
+    }
+
+    private void Section(string title, string? subtitle = null)
+    {
+        w.WriteLine();
+        w.Write($"■ {title}", ConsoleColor.Cyan);
+        w.WriteLine(subtitle is null ? "" : $"  {subtitle}", ConsoleColor.DarkGray);
+    }
+}

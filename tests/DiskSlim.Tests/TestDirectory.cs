@@ -22,14 +22,15 @@ internal sealed class TestDirectory : IDisposable
         return path;
     }
 
-    /// <summary>创建指定大小的文件，可以指定最后修改时间。</summary>
-    public string WriteFile(string relative, int size, DateTime? lastWriteUtc = null, FileAttributes? attributes = null)
+    /// <summary>创建指定大小的文件。指定 <paramref name="timestampUtc"/> 时，创建时间和最后修改时间都设成它。</summary>
+    public string WriteFile(string relative, int size, DateTime? timestampUtc = null, FileAttributes? attributes = null)
     {
         var path = PathOf(relative);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllBytes(path, new byte[size]);
-        if (lastWriteUtc is { } time)
+        if (timestampUtc is { } time)
         {
+            File.SetCreationTimeUtc(path, time);
             File.SetLastWriteTimeUtc(path, time);
         }
 
@@ -39,6 +40,14 @@ internal sealed class TestDirectory : IDisposable
         }
 
         return path;
+    }
+
+    /// <summary>把目录的创建时间和修改时间设成指定时间。</summary>
+    public void SetDirectoryTime(string relative, DateTime timestampUtc)
+    {
+        var path = PathOf(relative);
+        Directory.SetCreationTimeUtc(path, timestampUtc);
+        Directory.SetLastWriteTimeUtc(path, timestampUtc);
     }
 
     /// <summary>用 mklink /J 创建目录联接（不需要管理员权限）。</summary>

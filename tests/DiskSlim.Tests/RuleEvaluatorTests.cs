@@ -48,6 +48,23 @@ public sealed class RuleEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void Read_only_files_are_not_reclaimable_when_the_tool_does_the_cleaning()
+    {
+        _dir.WriteFile("cache/normal.bin", 100);
+        _dir.WriteFile("cache/readonly.bin", 40, attributes: FileAttributes.ReadOnly);
+        var advisory = Rule("advice", _dir.PathOf("cache"));
+        var automatic = advisory with { Id = "auto", Action = CleanupAction.Delete };
+
+        // 分开评估，避免同一路径只归属第一条规则。
+        var advice = new RuleEvaluator(_drive).Evaluate(advisory);
+        var auto = new RuleEvaluator(_drive).Evaluate(automatic);
+
+        Assert.Equal(140, advice.ReclaimableBytes); // 手动清理时用户可以自己处理只读文件
+        Assert.Equal(100, auto.ReclaimableBytes);   // 和工具实际会删除的一致
+        Assert.Equal(140, auto.TotalBytes);
+    }
+
+    [Fact]
     public void Measures_single_files()
     {
         var now = DateTimeOffset.UtcNow;

@@ -62,6 +62,19 @@ public sealed class TreeScannerTests : IDisposable
     }
 
     [Fact]
+    public void Freshly_extracted_files_with_old_modified_time_are_not_reclaimable()
+    {
+        // 解压出来的文件：修改时间是很久以前，创建时间是现在。
+        var path = _dir.WriteFile("extracted.dll", 100);
+        File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddYears(-2));
+
+        var result = new TreeScanner(new ScanOptions { ReclaimableBefore = DateTimeOffset.UtcNow.AddDays(-1) }).Scan(_dir.Root);
+
+        Assert.Equal(100, result.Root.TotalBytes);
+        Assert.Equal(0, result.Root.TotalReclaimableBytes);
+    }
+
+    [Fact]
     public void Without_cutoff_everything_is_reclaimable()
     {
         _dir.WriteFile("a.tmp", 70);

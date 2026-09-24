@@ -4,6 +4,7 @@ using DiskSlim.Cli;
 try
 {
     Console.OutputEncoding = Encoding.UTF8;
+    Console.InputEncoding = Encoding.UTF8;
 }
 catch (IOException)
 {
@@ -12,7 +13,7 @@ catch (IOException)
 
 try
 {
-    return CliApp.Run(args, Console.Out, Console.Error);
+    return CliApp.Run(args, Console.Out, Console.Error, Console.In);
 }
 catch (Exception ex)
 {

@@ -86,6 +86,21 @@ public static class RuleLoader
             {
                 problems.Add($"{label}：risk 只能是 low、medium 或 high");
             }
+
+            if (rule.Risk == RiskLevel.High && rule.Action != CleanupAction.None)
+            {
+                problems.Add($"{label}：risk 为 high（仅供参考）的规则不能设置 action，工具不会清理这类内容");
+            }
+
+            var recycleBinPaths = rule.Paths.Count(PathExpander.IsRecycleBin);
+            if (rule.Action == CleanupAction.EmptyRecycleBin && recycleBinPaths != rule.Paths.Count)
+            {
+                problems.Add($"{label}：action 为 empty-recycle-bin 时，paths 只能是 {PathExpander.RecycleBinToken}");
+            }
+            else if (recycleBinPaths > 0 && rule.Action is CleanupAction.Delete or CleanupAction.Recycle)
+            {
+                problems.Add($"{label}：回收站只能用 empty-recycle-bin 清理");
+            }
         }
 
         return problems;
