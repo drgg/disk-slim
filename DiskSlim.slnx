@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DiskSlim.Cli/DiskSlim.Cli.csproj" />
+    <Project Path="src/DiskSlim.Core/DiskSlim.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DiskSlim.Tests/DiskSlim.Tests.csproj" />
+  </Folder>
+</Solution>

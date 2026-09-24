@@ -1,0 +1,416 @@
+{
+  // DiskSlim 默认清理规则
+  //
+  // paths      路径模板：支持环境变量（%LOCALAPPDATA%）和通配符（* ?，可出现在任意一级），用 / 或 \\ 分隔均可；
+  //            ::RecycleBin 表示回收站。
+  // risk       low    = 可放心清理（缓存、临时文件，删除后会自动重建）
+  //            medium = 需要确认（删除后要重新下载，或需要用户判断）
+  //            high   = 仅供参考（用户数据或系统文件，不建议用工具清理）
+  // minAgeDays 只把 N 天前修改过的文件计为“可释放”。
+  // processes  这些程序运行时不宜清理（不带 .exe）。
+  //
+  // 同一个路径只算给第一条命中它的规则：具体的规则放前面，宽泛的规则放后面。
+  "version": 1,
+  "rules": [
+    // ───────────── 系统临时文件 ─────────────
+    {
+      "id": "user-temp",
+      "name": "用户临时文件",
+      "category": "系统",
+      "paths": ["%TEMP%"],
+      "risk": "low",
+      "minAgeDays": 1,
+      "advice": "设置 → 系统 → 存储 → 临时文件。只把 1 天前的文件计为可释放，正在使用的文件清理时会被自动跳过。"
+    },
+    {
+      "id": "windows-temp",
+      "name": "Windows 临时文件",
+      "category": "系统",
+      "paths": ["%SystemRoot%/Temp"],
+      "risk": "low",
+      "minAgeDays": 1,
+      "advice": "需要管理员权限才能完整统计。用“磁盘清理 → 清理系统文件 → 临时文件”清理。"
+    },
+    {
+      "id": "windows-update-cache",
+      "name": "Windows 更新下载缓存",
+      "category": "系统",
+      "paths": ["%SystemRoot%/SoftwareDistribution/Download"],
+      "risk": "low",
+      "advice": "用“磁盘清理 → 清理系统文件 → Windows 更新清理”。系统正在下载或安装更新时不要清理。"
+    },
+    {
+      "id": "delivery-optimization",
+      "name": "传递优化缓存",
+      "category": "系统",
+      "paths": ["%SystemRoot%/ServiceProfiles/NetworkService/AppData/Local/Microsoft/Windows/DeliveryOptimization/Cache"],
+      "risk": "low",
+      "advice": "需要管理员权限才能统计。用“磁盘清理 → 传递优化文件”清理。"
+    },
+    {
+      "id": "error-reports",
+      "name": "错误报告和崩溃转储",
+      "category": "系统",
+      "paths": [
+        "%LOCALAPPDATA%/CrashDumps",
+        "%LOCALAPPDATA%/Microsoft/Windows/WER",
+        "%ProgramData%/Microsoft/Windows/WER",
+        "%SystemRoot%/Minidump",
+        "%SystemRoot%/MEMORY.DMP",
+        "%SystemRoot%/LiveKernelReports"
+      ],
+      "risk": "low",
+      "advice": "只有排查蓝屏或程序崩溃时才需要保留。用“磁盘清理 → 系统错误内存转储文件 / Windows 错误报告”清理。"
+    },
+    {
+      "id": "thumbnail-cache",
+      "name": "缩略图和图标缓存",
+      "category": "系统",
+      "paths": [
+        "%LOCALAPPDATA%/Microsoft/Windows/Explorer/thumbcache_*.db",
+        "%LOCALAPPDATA%/Microsoft/Windows/Explorer/iconcache_*.db"
+      ],
+      "risk": "low",
+      "advice": "用“磁盘清理 → 缩略图”清理，删除后会自动重建。"
+    },
+
+    // ───────────── 浏览器 ─────────────
+    {
+      "id": "chrome-cache",
+      "name": "Chrome 缓存",
+      "category": "浏览器",
+      "paths": [
+        "%LOCALAPPDATA%/Google/Chrome/User Data/*/Cache",
+        "%LOCALAPPDATA%/Google/Chrome/User Data/*/Code Cache",
+        "%LOCALAPPDATA%/Google/Chrome/User Data/*/GPUCache"
+      ],
+      "risk": "low",
+      "processes": ["chrome"],
+      "advice": "Chrome 设置 → 隐私和安全 → 删除浏览数据，只勾选“缓存的图片和文件”，不会退出登录。"
+    },
+    {
+      "id": "edge-cache",
+      "name": "Edge 缓存",
+      "category": "浏览器",
+      "paths": [
+        "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/Cache",
+        "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/Code Cache",
+        "%LOCALAPPDATA%/Microsoft/Edge/User Data/*/GPUCache"
+      ],
+      "risk": "low",
+      "processes": ["msedge"],
+      "advice": "Edge 设置 → 隐私、搜索和服务 → 清除浏览数据，只勾选“缓存的图像和文件”，不会退出登录。"
+    },
+    {
+      "id": "firefox-cache",
+      "name": "Firefox 缓存",
+      "category": "浏览器",
+      "paths": ["%LOCALAPPDATA%/Mozilla/Firefox/Profiles/*/cache2"],
+      "risk": "low",
+      "processes": ["firefox"],
+      "advice": "Firefox 设置 → 隐私与安全 → Cookie 和网站数据 → 清除数据，只勾选“缓存的 Web 内容”。"
+    },
+
+    // ───────────── 常用软件 ─────────────
+    {
+      "id": "netease-cloudmusic-cache",
+      "name": "网易云音乐缓存",
+      "category": "应用",
+      "paths": ["%LOCALAPPDATA%/NetEase/CloudMusic/Cache"],
+      "risk": "low",
+      "processes": ["cloudmusic"],
+      "advice": "在网易云音乐的设置（下载设置）里清除缓存，并可以限制缓存大小、把缓存目录改到其他盘。已下载的歌曲不受影响。"
+    },
+    {
+      "id": "vscode-cache",
+      "name": "VS Code 缓存",
+      "category": "应用",
+      "paths": [
+        "%APPDATA%/Code/CachedExtensionVSIXs",
+        "%APPDATA%/Code/CachedData",
+        "%APPDATA%/Code/logs",
+        "%APPDATA%/Code/Crashpad"
+      ],
+      "risk": "low",
+      "processes": ["Code"],
+      "advice": "关闭 VS Code 后删除这些目录。里面是扩展安装包、旧版本的编译缓存和日志，不影响设置和已装的扩展。"
+    },
+    {
+      "id": "electron-web-cache",
+      "name": "桌面软件的网页缓存",
+      "category": "应用",
+      "paths": [
+        "%APPDATA%/*/Cache/Cache_Data",
+        "%APPDATA%/*/Code Cache",
+        "%APPDATA%/*/GPUCache",
+        "%APPDATA%/*/DawnCache",
+        "%APPDATA%/*/DawnGraphiteCache",
+        "%APPDATA%/*/DawnWebGPUCache"
+      ],
+      "risk": "low",
+      "advice": "VS Code、百度网盘、Figma 等基于网页技术（Electron）的软件的缓存。先关闭对应软件再删除，删除后会自动重建。"
+    },
+    {
+      "id": "jianying-cache",
+      "name": "剪映缓存",
+      "category": "应用",
+      "paths": ["%LOCALAPPDATA%/JianyingPro/User Data/Cache"],
+      "risk": "medium",
+      "processes": ["JianyingPro"],
+      "advice": "在剪映的设置里清理缓存。草稿不在这里，但清理前最好先确认草稿已经导出。"
+    },
+
+    // ───────────── 开发工具 ─────────────
+    {
+      "id": "npm-cache",
+      "name": "npm 缓存",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/npm-cache", "%APPDATA%/npm-cache"],
+      "risk": "low",
+      "advice": "运行 npm cache clean --force。以后安装包时会重新下载。"
+    },
+    {
+      "id": "yarn-cache",
+      "name": "Yarn 缓存",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/Yarn/Cache"],
+      "risk": "low",
+      "advice": "运行 yarn cache clean。"
+    },
+    {
+      "id": "pnpm-store",
+      "name": "pnpm 包仓库",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/pnpm/store"],
+      "risk": "medium",
+      "advice": "运行 pnpm store prune，只删除没有项目在用的包。不要直接删除整个目录：项目里的依赖是硬链接到这里的。"
+    },
+    {
+      "id": "pip-cache",
+      "name": "pip 缓存",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/pip/cache"],
+      "risk": "low",
+      "advice": "运行 pip cache purge。"
+    },
+    {
+      "id": "uv-cache",
+      "name": "uv 缓存",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/uv/cache"],
+      "risk": "low",
+      "advice": "运行 uv cache clean（或 uv cache prune 只删除没用到的部分）。uv 用硬链接安装包，实际能释放的空间可能比这里显示的少。"
+    },
+    {
+      "id": "conda-pkgs",
+      "name": "Conda 包缓存",
+      "category": "开发",
+      "paths": [
+        "%USERPROFILE%/anaconda3/pkgs",
+        "%USERPROFILE%/miniconda3/pkgs",
+        "%USERPROFILE%/miniforge3/pkgs"
+      ],
+      "risk": "low",
+      "advice": "运行 conda clean --all。"
+    },
+    {
+      "id": "nuget-http-cache",
+      "name": "NuGet 下载缓存",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/NuGet/v3-cache", "%LOCALAPPDATA%/NuGet/plugins-cache"],
+      "risk": "low",
+      "advice": "运行 dotnet nuget locals http-cache --clear。"
+    },
+    {
+      "id": "nuget-packages",
+      "name": "NuGet 全局包目录",
+      "category": "开发",
+      "paths": ["%USERPROFILE%/.nuget/packages"],
+      "risk": "medium",
+      "advice": "运行 dotnet nuget locals global-packages --clear。之后每个 .NET 项目都要重新还原依赖（需要联网）。"
+    },
+    {
+      "id": "gradle-caches",
+      "name": "Gradle 缓存",
+      "category": "开发",
+      "paths": ["%USERPROFILE%/.gradle/caches"],
+      "risk": "medium",
+      "advice": "关闭 Android Studio / IDEA 后删除。之后构建会重新下载依赖。"
+    },
+    {
+      "id": "maven-repository",
+      "name": "Maven 本地仓库",
+      "category": "开发",
+      "paths": ["%USERPROFILE%/.m2/repository"],
+      "risk": "medium",
+      "advice": "删除后构建会重新下载依赖。私有仓库里下不到的包要先备份。"
+    },
+    {
+      "id": "go-build-cache",
+      "name": "Go 编译缓存",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/go-build"],
+      "risk": "low",
+      "advice": "运行 go clean -cache。"
+    },
+    {
+      "id": "cargo-registry-cache",
+      "name": "Cargo 下载缓存",
+      "category": "开发",
+      "paths": ["%USERPROFILE%/.cargo/registry/cache"],
+      "risk": "low",
+      "advice": "删除后构建时会重新下载 crate 压缩包。"
+    },
+    {
+      "id": "puccinialin",
+      "name": "Python 构建用的 Rust 工具链",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/puccinialin"],
+      "risk": "medium",
+      "advice": "安装带 Rust 扩展的 Python 包时自动下载的 Rust 工具链。删除后下次需要时会重新下载。"
+    },
+    {
+      "id": "playwright-browsers",
+      "name": "Playwright 浏览器",
+      "category": "开发",
+      "paths": ["%LOCALAPPDATA%/ms-playwright"],
+      "risk": "medium",
+      "advice": "自动化测试用的浏览器。删除后运行 npx playwright install 重新安装。"
+    },
+    {
+      "id": "huggingface-cache",
+      "name": "Hugging Face 模型缓存",
+      "category": "开发",
+      "paths": ["%USERPROFILE%/.cache/huggingface"],
+      "risk": "medium",
+      "advice": "下载的 AI 模型，删除后要重新下载，可能很大。可以设置 HF_HOME 环境变量把它移到其他盘。"
+    },
+
+    // ───────────── 聊天软件（用户数据，只提示） ─────────────
+    {
+      "id": "wechat-files",
+      "name": "微信聊天记录和文件",
+      "category": "聊天软件",
+      "paths": ["%USERPROFILE%/Documents/xwechat_files", "%USERPROFILE%/Documents/WeChat Files"],
+      "risk": "high",
+      "processes": ["Weixin", "WeChat"],
+      "advice": "包含聊天记录和收到的文件。请在微信的设置里清理存储空间或更改存储位置，不要手动删除。"
+    },
+    {
+      "id": "qq-files",
+      "name": "QQ 聊天记录和文件",
+      "category": "聊天软件",
+      "paths": ["%USERPROFILE%/Documents/Tencent Files"],
+      "risk": "high",
+      "processes": ["QQ"],
+      "advice": "包含聊天记录和收到的文件。请在 QQ 的设置里清理存储空间或更改存储位置，不要手动删除。"
+    },
+    {
+      "id": "wxwork-files",
+      "name": "企业微信数据",
+      "category": "聊天软件",
+      "paths": ["%USERPROFILE%/Documents/WXWork"],
+      "risk": "high",
+      "processes": ["WXWork"],
+      "advice": "包含聊天记录和文件。请在企业微信的设置里清理或更改存储位置。"
+    },
+    {
+      "id": "tencent-appdata",
+      "name": "腾讯软件的程序数据",
+      "category": "聊天软件",
+      "paths": ["%APPDATA%/Tencent"],
+      "risk": "high",
+      "advice": "QQ、微信、WeGame 等软件的运行数据和配置。请在各软件内清理，不要手动删除。"
+    },
+    {
+      "id": "dingtalk-appdata",
+      "name": "钉钉数据",
+      "category": "聊天软件",
+      "paths": ["%APPDATA%/DingTalk"],
+      "risk": "high",
+      "processes": ["DingTalk"],
+      "advice": "包含聊天记录和缓存。请在钉钉的设置里清理缓存。"
+    },
+
+    // ───────────── 系统文件 ─────────────
+    {
+      "id": "windows-old",
+      "name": "旧版 Windows（Windows.old）",
+      "category": "系统",
+      "paths": ["%SystemDrive%/Windows.old"],
+      "risk": "medium",
+      "advice": "用“磁盘清理 → 清理系统文件 → 以前的 Windows 安装”删除。删除后就不能回退到旧版本系统了。"
+    },
+    {
+      "id": "hibernation-file",
+      "name": "休眠文件",
+      "category": "系统",
+      "paths": ["%SystemDrive%/hiberfil.sys"],
+      "risk": "medium",
+      "advice": "如果不用“休眠”，可以在管理员命令行运行 powercfg /h off 关闭，代价是同时失去“快速启动”。"
+    },
+    {
+      "id": "page-file",
+      "name": "虚拟内存文件",
+      "category": "系统",
+      "paths": ["%SystemDrive%/pagefile.sys", "%SystemDrive%/swapfile.sys"],
+      "risk": "high",
+      "advice": "由系统管理，建议保持“自动管理分页文件大小”。关闭或设得太小可能导致程序崩溃。"
+    },
+    {
+      "id": "windows-installer-cache",
+      "name": "Windows Installer 缓存",
+      "category": "系统",
+      "paths": ["%SystemRoot%/Installer"],
+      "risk": "high",
+      "advice": "软件卸载和修复时要用到，不要手动删除。"
+    },
+    {
+      "id": "package-cache",
+      "name": "安装程序包缓存",
+      "category": "系统",
+      "paths": ["%ProgramData%/Package Cache"],
+      "risk": "high",
+      "advice": "Visual Studio 等软件的安装包缓存，卸载和修复时要用到，不要手动删除。"
+    },
+
+    // ───────────── 用户文件（放最后：范围最宽） ─────────────
+    {
+      "id": "recycle-bin",
+      "name": "回收站",
+      "category": "用户文件",
+      "paths": ["::RecycleBin"],
+      "risk": "medium",
+      "advice": "先确认里面没有要找回的文件，再右键回收站 → 清空回收站。"
+    },
+    {
+      "id": "downloads-installers",
+      "name": "下载文件夹里的安装包",
+      "category": "用户文件",
+      "paths": [
+        "%USERPROFILE%/Downloads/*.exe",
+        "%USERPROFILE%/Downloads/*.msi",
+        "%USERPROFILE%/Downloads/*.msix",
+        "%USERPROFILE%/Downloads/*.msixbundle"
+      ],
+      "risk": "medium",
+      "advice": "软件装好后，安装包一般就不需要了。确认后手动删除。"
+    },
+    {
+      "id": "downloads",
+      "name": "下载文件夹（其他文件）",
+      "category": "用户文件",
+      "paths": ["%USERPROFILE%/Downloads"],
+      "risk": "high",
+      "advice": "个人文件，请手动整理。可以把整个文件夹移到其他盘：右键“下载” → 属性 → 位置 → 移动。"
+    },
+    {
+      "id": "desktop",
+      "name": "桌面",
+      "category": "用户文件",
+      "paths": ["%USERPROFILE%/Desktop"],
+      "risk": "high",
+      "advice": "个人文件，请手动整理。桌面文件夹同样可以通过 属性 → 位置 移到其他盘。"
+    }
+  ]
+}

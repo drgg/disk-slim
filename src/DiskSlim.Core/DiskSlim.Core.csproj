@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>DiskSlim.Core</RootNamespace>
+    <!-- LibraryImport 生成的互操作代码需要 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Rules\default-rules.json" LogicalName="DiskSlim.Core.Rules.default-rules.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DiskSlim.Tests" />
+  </ItemGroup>
+
+</Project>
