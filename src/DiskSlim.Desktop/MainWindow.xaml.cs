@@ -25,6 +25,13 @@ public partial class MainWindow : Window
         viewModel.RestartAsAdminRequested += OnRestartAsAdmin;
         viewModel.Quarantine.ConfirmPurge = question =>
             MessageBox.Show(this, question, "彻底删除", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+        viewModel.Duplicates.Confirm = question =>
+            MessageBox.Show(this, question, "移入隔离区", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+        viewModel.Duplicates.PickFolder = initial =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择要查找重复文件的位置", InitialDirectory = Directory.Exists(initial) ? initial : "" };
+            return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+        };
         Treemap.TileClicked += (_, e) =>
         {
             if (e.Tile is { Kind: TileKind.Directory, Node: { } node })
@@ -58,7 +65,7 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 隔离区）。</summary>
+    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 隔离区）。</summary>
     public void SelectTab(int index) => Tabs.SelectedIndex = index;
 
     private async void OnCleanupRequested(object? sender, CleanupViewModel cleanup)
@@ -108,6 +115,14 @@ public partial class MainWindow : Window
     private void OnLargeFileShowInExplorer(object sender, RoutedEventArgs e)
     {
         if (LargestFilesList.SelectedItem is LargeFileViewModel file)
+        {
+            ShowInExplorer(file.Path);
+        }
+    }
+
+    private void OnDuplicateShowInExplorer(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: DuplicateFileViewModel file })
         {
             ShowInExplorer(file.Path);
         }

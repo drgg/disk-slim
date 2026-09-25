@@ -41,6 +41,8 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
   - 方块底部的绿色细条表示里面有多少可以清理，方便顺着它一层层找到可清理的内容；
   - 右侧列出当前目录的子项和各自的可清理空间；右键可以在资源管理器中显示。
 - **最大的文件**：最大的 50 个文件。
+- **重复文件**：选择位置和最小文件大小后查找，勾选的副本移入隔离区（见下文）。
+- **隔离区**：查看、恢复或彻底删除之前移入隔离区的内容。
 
 点“清理选中项…”后先弹出**模拟结果**：每一项会怎么处理、多少文件、为什么跳过。点“开始清理”才执行，可以随时“停止”。完成后显示磁盘剩余空间的变化和日志位置，并自动重新扫描。
 
@@ -52,7 +54,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-dialog dialog.png
 ```
 
-`--tab`：0 可清理项目，1 空间分布，2 最大的文件；`--size 1280x820` 设置窗口大小。
+`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 隔离区；`--size 1280x820` 设置窗口大小。
 
 ## 命令行：查看报告 `diskslim scan`
 
@@ -159,6 +161,27 @@ diskslim quarantine purge --expired --execute
 
 `event` 的取值：`run-start`、`rule-start`、`deleted`、`recycled`、`quarantined`、`removed-dir`、`emptied-recycle-bin`、`purged-quarantine`、`failed`、`rule-end`、`run-end`。
 
+## 重复文件：`diskslim dupes`
+
+```bash
+diskslim dupes
+```
+
+```bash
+diskslim dupes D:\照片 E:\备份盘 --min-size 10MB
+```
+
+```bash
+diskslim dupes --remove --execute
+```
+
+- **只读查找**，按成本从低到高缩小范围：先按大小分组，再比较文件头尾各 16 KB 的哈希，最后才计算完整的 SHA-256。用户目录一般几秒就能查完。
+- **硬链接不算重复**：同一个物理文件的多个路径删掉也不省空间（uv、pnpm 等大量使用硬链接）。
+- **默认不查**：`AppData`、`ProgramData`（软件自带同一个 DLL 很正常）、以 `.` 开头的工具目录和 `node_modules`、安全防线里的禁区。
+- **受保护、只列出不能移除**：聊天记录等“仅供参考”的软件数据（被软件内部引用）、路径带 backup / 备份 的文件、DLL 等程序库。组里有受保护的文件时整组不给建议。
+- **只建议移除明显的副本**：文件名带“(1)”“副本”“- Copy”，或在下载文件夹里。其他重复文件（例如项目里被引用的资源）只列出，由你自己判断——图形界面里可以手动勾选。
+- **移除 = 移入隔离区**，可以恢复。每组至少保留一份；保留的那份在扫描后被改过或删除时整组不动；要移除的文件在扫描后被改过也不动。
+
 ## 退出码
 
 `0` 成功（包括在确认提示里选择了取消），`1` 出错，`2` 参数错误或选择了不能清理的项目，`130` 被 Ctrl+C 取消。设置环境变量 `DISKSLIM_DEBUG=1` 可以看到完整的异常堆栈。
@@ -199,6 +222,8 @@ src/DiskSlim.Core/            扫描、规则和清理引擎（命令行和图�
   Rules/                      规则模型、加载校验、路径展开和归属（RuleMatcher）、规则评估、默认规则
   Cleaning/                   清理计划、安全防线、执行器、文件操作、操作日志
   Reporting/                  报告模型和报告生成
+  Quarantine/                 隔离区：移入、恢复、彻底删除
+  Duplicates/                 重复文件查找和移除
   Visualization/              方块图布局（Squarified Treemap）、可清理空间索引
   Presentation/               两个界面共用的显示文字
   Platform/                   回收站、管理员权限、进程列表
@@ -207,7 +232,7 @@ src/DiskSlim.Desktop/         图形界面（WPF）：视图模型、方块图�
 tests/DiskSlim.Tests/         xUnit 测试（含视图模型）
 ```
 
-所有写操作都集中在 [Cleaning/FileOperations.cs](src/DiskSlim.Core/Cleaning/FileOperations.cs)，便于审查。
+写操作集中在 [Cleaning/FileOperations.cs](src/DiskSlim.Core/Cleaning/FileOperations.cs)（删除、回收站）和 [Quarantine/QuarantineStore.cs](src/DiskSlim.Core/Quarantine/QuarantineStore.cs)（隔离区的移入、恢复、彻底删除），便于审查。
 
 运行测试：
 

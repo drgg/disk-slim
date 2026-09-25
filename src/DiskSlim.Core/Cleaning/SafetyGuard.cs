@@ -100,6 +100,13 @@ public sealed class SafetyGuard
         return new SafetyGuard(critical, forbidden);
     }
 
+    /// <summary>这个目录是否正好是一个禁区（遍历时在这里停下，里面的东西都不用看）。</summary>
+    public bool IsForbiddenZone(string directory)
+    {
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
+        return _forbiddenZones.Any(z => string.Equals(z, full, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>检查一个清理目标，允许时返回 null，否则返回原因。</summary>
     public string? Check(string path)
     {

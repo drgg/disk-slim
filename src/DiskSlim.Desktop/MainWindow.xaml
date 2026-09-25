@@ -262,6 +262,98 @@
                     </ListView>
                 </Border>
             </TabItem>
+            <!-- ───── 重复文件 ───── -->
+            <TabItem Header="重复文件" DataContext="{Binding Duplicates}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Margin="20,14,20,10">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="不小于" VerticalAlignment="Center" Margin="12,0,6,0" Foreground="{StaticResource SubtleTextBrush}" />
+                                <ComboBox ItemsSource="{Binding MinSizes}" SelectedItem="{Binding MinSize}" DisplayMemberPath="Label" Width="90" Height="32" VerticalContentAlignment="Center" />
+                                <Button Content="开始查找" Style="{StaticResource PrimaryButton}" Command="{Binding SearchCommand}" Margin="8,0,0,0" />
+                                <Button Content="取消" Command="{Binding CancelCommand}" Margin="8,0,0,0"
+                                        Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                            <TextBlock Text="查找位置" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource SubtleTextBrush}" />
+                            <Button DockPanel.Dock="Right" Content="浏览…" Command="{Binding BrowseCommand}" Margin="8,0,0,0" />
+                            <TextBox Text="{Binding RootPath, UpdateSourceTrigger=PropertyChanged}" Height="32" VerticalContentAlignment="Center" Padding="6,0" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        <TextBlock Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"
+                                   Text="不查软件数据（AppData、ProgramData）和开发工具目录（.git、node_modules……）。默认只勾选明显的副本（文件名带“(1)”“副本”，或在下载文件夹里）；其他重复文件可能被项目或软件引用，请自己判断。勾选的文件会移入隔离区，可以恢复。" />
+                        <ProgressBar IsIndeterminate="True" Height="4" Margin="0,10,0,4" Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Text="{Binding ProgressText}" Foreground="{StaticResource SubtleTextBrush}" Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,0,20,8">
+                        <ItemsControl ItemsSource="{Binding Groups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:DuplicateGroupViewModel}">
+                                    <Border Style="{StaticResource Card}" Margin="0,0,0,10" Padding="14,10">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Header}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Note}" Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,2,0,0"
+                                                       Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}" />
+                                            <ItemsControl ItemsSource="{Binding Files}" Margin="0,6,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:DuplicateFileViewModel}">
+                                                        <Grid Margin="0,3" ToolTip="{Binding Path}">
+                                                            <Grid.ContextMenu>
+                                                                <ContextMenu>
+                                                                    <MenuItem Header="在资源管理器中显示" Click="OnDuplicateShowInExplorer" />
+                                                                </ContextMenu>
+                                                            </Grid.ContextMenu>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanSelect}" VerticalAlignment="Top" Margin="0,2,8,0"
+                                                                      ToolTip="勾选 = 移入隔离区" />
+                                                            <Border Grid.Column="1" Background="{StaticResource ChipBrush}" CornerRadius="4" Padding="6,1" Margin="0,0,8,0" VerticalAlignment="Top"
+                                                                    Visibility="{Binding HasTag, Converter={StaticResource BoolToVisibility}}">
+                                                                <TextBlock Text="{Binding Tag}" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+                                                            </Border>
+                                                            <StackPanel Grid.Column="2">
+                                                                <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding Note}" FontSize="11" Foreground="{StaticResource WarningBrush}"
+                                                                           Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}" />
+                                                            </StackPanel>
+                                                            <TextBlock Grid.Column="3" Text="{Binding DateText}" Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="12,0,0,0" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="20,12">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button Content="只勾选明显的副本" Command="{Binding SelectSuggestedCommand}" Margin="0,0,8,0" />
+                                <Button Content="全部取消" Command="{Binding ClearSelectionCommand}" Margin="0,0,8,0" />
+                                <Button Content="移入隔离区…" Style="{StaticResource DangerButton}" Command="{Binding RemoveCommand}" Padding="18,8" />
+                            </StackPanel>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectionText}" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Message}" Foreground="#2E7D32" FontSize="12" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <!-- ───── 隔离区 ───── -->
             <TabItem Header="隔离区" DataContext="{Binding Quarantine}">
                 <Grid Margin="20,14">

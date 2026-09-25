@@ -137,6 +137,50 @@ public sealed class DesktopViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Duplicates_page_preselects_obvious_copies_and_moves_them_to_quarantine()
+    {
+        _dir.WriteFile("docs/report.pdf", 5000);
+        _dir.WriteFile("docs/report (1).pdf", 5000);
+        _dir.WriteFile("work/report.pdf", 5000);
+        var result = new Core.Duplicates.DuplicateFinder().Find([_dir.Root], new Core.Duplicates.DuplicateSearchOptions { MinFileSize = 1 });
+        var page = new DuplicatesViewModel(new RuleSet { Rules = [] });
+
+        page.Show(result);
+
+        var group = Assert.Single(page.Groups);
+        var selected = Assert.Single(page.SelectedFiles);
+        Assert.Contains("(1)", selected.Path);
+        Assert.StartsWith("已勾选 1 个副本", page.SelectionText);
+
+        var store = new Core.Quarantine.QuarantineStore(_dir.PathOf("quarantine"));
+        var selections = page.Groups.Select(g => new Core.Duplicates.DuplicateSelection(g.Group, g.Selected.Select(f => f.File).ToList())).ToList();
+        var message = page.Remove(selections, _ => store, _dir.PathOf("logs/dupes.jsonl"));
+
+        Assert.Contains("已把 1 个副本", message);
+        Assert.False(File.Exists(_dir.PathOf("docs/report (1).pdf")));
+        Assert.Equal(2, page.Groups.Single().Files.Count); // 还剩两份，仍然是一组重复
+        Assert.Single(store.ListSessions());
+    }
+
+    [Fact]
+    public void Duplicates_page_never_lets_every_copy_be_ticked()
+    {
+        _dir.WriteFile("a/x.bin", 3000);
+        _dir.WriteFile("b/x.bin", 3000);
+        var result = new Core.Duplicates.DuplicateFinder().Find([_dir.Root], new Core.Duplicates.DuplicateSearchOptions { MinFileSize = 1 });
+        var page = new DuplicatesViewModel(new RuleSet { Rules = [] });
+        page.Show(result);
+
+        foreach (var file in page.Groups[0].Files)
+        {
+            file.IsSelected = true;
+        }
+
+        Assert.Single(page.SelectedFiles);
+        Assert.Contains("至少要保留一份", page.Message);
+    }
+
+    [Fact]
     public async Task Cleanup_dialog_reports_when_there_is_nothing_to_do()
     {
         _dir.WriteFile("cache/fresh.tmp", 10);

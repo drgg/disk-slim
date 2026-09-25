@@ -8,6 +8,7 @@ internal enum CliCommand
     Scan,
     Clean,
     Quarantine,
+    Dupes,
 }
 
 internal enum QuarantineVerb
@@ -70,6 +71,16 @@ internal sealed record CliOptions
 
     /// <summary>--expired 时多少天算到期。</summary>
     public int ExpiryDays { get; init; } = 7;
+
+    // ───── dupes ─────
+
+    /// <summary>在这些目录里查找重复文件；为空时查用户目录。</summary>
+    public IReadOnlyList<string> DupesRoots { get; init; } = [];
+
+    public long MinFileSize { get; init; } = 1024 * 1024;
+
+    /// <summary>把建议移除的副本移入隔离区（配合 --execute）。</summary>
+    public bool RemoveDuplicates { get; init; }
 }
 
 internal sealed record ParseResult(CliOptions? Options, string? Error);
@@ -87,6 +98,8 @@ internal static class CliParser
           diskslim quarantine purge <批次>        彻底删除一批，释放空间（默认只模拟，加 --execute 执行）
           diskslim quarantine purge --expired     彻底删除超过 7 天的批次（--days 修改天数）
           diskslim quarantine purge --all         彻底删除隔离区中的全部内容
+          diskslim dupes [路径...]                查找重复文件（默认查用户目录），只读
+          diskslim dupes [路径...] --remove       把建议移除的副本移入隔离区（默认只模拟，加 --execute 执行）
 
         通用选项：
           -d, --drive <盘符>    要分析的磁盘，默认是系统盘
@@ -112,6 +125,12 @@ internal static class CliParser
           -y, --yes             执行前不再询问确认
               --log <文件>      操作日志的保存位置，默认 %LOCALAPPDATA%\DiskSlim\logs
 
+        dupes 选项：
+              --min-size <大小>  只查不小于这个大小的文件，默认 1MB（例如 500KB、10MB、1GB）
+              --remove          移除建议的副本：每组保留最早创建的一份，其余移入隔离区；
+                                组里有聊天记录等受保护的文件时整组不动
+          -n, --top <数量>      显示多少组，默认 15
+
         “需要确认”的项目默认移入隔离区：可以随时恢复，彻底删除后才释放空间；
         超过 7 天的隔离内容会作为“可放心清理”的项目出现在 diskslim clean 里。
 
@@ -128,32 +147,40 @@ internal static class CliParser
     /// <summary>只能用于特定命令的选项；不在表里的选项所有命令都能用。</summary>
     private static readonly Dictionary<string, CliCommand[]> CommandSpecific = new(StringComparer.Ordinal)
     {
-        ["-n"] = [CliCommand.Scan],
-        ["--top"] = [CliCommand.Scan],
+        ["-n"] = [CliCommand.Scan, CliCommand.Dupes],
+        ["--top"] = [CliCommand.Scan, CliCommand.Dupes],
         ["--json"] = [CliCommand.Scan],
         ["--md"] = [CliCommand.Scan],
         ["--rules-only"] = [CliCommand.Scan],
         ["--map-only"] = [CliCommand.Scan],
         ["--list-rules"] = [CliCommand.Scan],
         ["--rule"] = [CliCommand.Clean],
-        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine],
-        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine],
-        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine],
-        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine],
+        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
+        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
+        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
+        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
         ["--expired"] = [CliCommand.Quarantine],
         ["--all"] = [CliCommand.Quarantine],
         ["--days"] = [CliCommand.Quarantine],
+        ["--min-size"] = [CliCommand.Dupes],
+        ["--remove"] = [CliCommand.Dupes],
     };
 
     public static ParseResult Parse(IReadOnlyList<string> args)
     {
         var options = new CliOptions();
         var start = 0;
-        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine")
+        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes")
         {
             options = options with
             {
-                Command = args[0] switch { "clean" => CliCommand.Clean, "quarantine" => CliCommand.Quarantine, _ => CliCommand.Scan },
+                Command = args[0] switch
+                {
+                    "clean" => CliCommand.Clean,
+                    "quarantine" => CliCommand.Quarantine,
+                    "dupes" => CliCommand.Dupes,
+                    _ => CliCommand.Scan,
+                },
             };
             start = 1;
         }
@@ -177,7 +204,7 @@ internal static class CliParser
                 return Fail($"{arg} 只能用于 {string.Join(" 或 ", allowed.Select(c => "diskslim " + c.ToString().ToLowerInvariant()))}");
             }
 
-            if (options.Command == CliCommand.Quarantine && !arg.StartsWith('-') && arg != "/?")
+            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes && !arg.StartsWith('-') && arg != "/?")
             {
                 positionals.Add(arg);
                 continue;
@@ -301,6 +328,22 @@ internal static class CliParser
                     options = options with { PurgeAll = true };
                     break;
 
+                case "--remove":
+                    options = options with { RemoveDuplicates = true };
+                    break;
+
+                case "--min-size":
+                {
+                    var value = TakeValue();
+                    if (ParseSize(value) is not { } size)
+                    {
+                        return Fail("--min-size 需要一个大小，例如 500KB、10MB、1GB");
+                    }
+
+                    options = options with { MinFileSize = size };
+                    break;
+                }
+
                 case "--days":
                 {
                     var value = TakeValue();
@@ -365,6 +408,16 @@ internal static class CliParser
             options = parsedQuarantine.Options!;
         }
 
+        if (options.Command == CliCommand.Dupes)
+        {
+            if (options.Execute && !options.RemoveDuplicates)
+            {
+                return Fail("--execute 需要和 --remove 一起使用（dupes 默认只查找，不移动任何文件）");
+            }
+
+            options = options with { DupesRoots = positionals };
+        }
+
         return new ParseResult(options with { RuleIds = ruleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList() }, null);
     }
 
@@ -417,6 +470,32 @@ internal static class CliParser
     }
 
     private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>解析 "500KB"、"10MB"、"1.5GB"、"4096" 这样的大小（1024 进制）。</summary>
+    internal static long? ParseSize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var text = value.Trim().ToUpperInvariant().Replace(" ", "", StringComparison.Ordinal);
+        (string Suffix, long Factor)[] units = [("GB", 1L << 30), ("G", 1L << 30), ("MB", 1L << 20), ("M", 1L << 20), ("KB", 1L << 10), ("K", 1L << 10), ("B", 1)];
+        var factor = 1L;
+        foreach (var (suffix, unitFactor) in units)
+        {
+            if (text.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                text = text[..^suffix.Length];
+                factor = unitFactor;
+                break;
+            }
+        }
+
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && number >= 0
+            ? (long)(number * factor)
+            : null;
+    }
 
     private static ParseResult Fail(string message) => new(null, message);
 }

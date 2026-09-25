@@ -87,6 +87,7 @@ internal static class CliApp
             {
                 CliCommand.Clean => CleanCommand.Run(context),
                 CliCommand.Quarantine => QuarantineCommand.Run(context),
+                CliCommand.Dupes => DupesCommand.Run(context),
                 _ => ScanCommand.Run(context),
             };
         }

@@ -33,6 +33,8 @@ public sealed class MainViewModel : ObservableObject
     {
         _rules = rules;
         IsElevated = SystemInfo.IsElevated();
+        Duplicates = new DuplicatesViewModel(rules);
+        Duplicates.QuarantineChanged += (_, _) => Quarantine.Refresh();
         foreach (var drive in DriveOption.Available(SystemInfo.SystemDriveRoot))
         {
             Drives.Add(drive);
@@ -64,6 +66,8 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<LargeFileViewModel> LargestFiles { get; } = [];
 
     public QuarantineViewModel Quarantine { get; } = new();
+
+    public DuplicatesViewModel Duplicates { get; }
 
     public AsyncRelayCommand ScanCommand { get; }
 

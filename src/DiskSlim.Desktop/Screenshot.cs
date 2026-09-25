@@ -66,6 +66,11 @@ internal static class Screenshot
 
         await window.ViewModel.ScanAsync();
         window.SelectTab(options.Tab);
+        if (options.Tab == 3)
+        {
+            // 重复文件页：查找一次（只读）。
+            await window.ViewModel.Duplicates.SearchAsync();
+        }
         if (options.NavigatePath is { } target && window.ViewModel.MapRoot?.FindDescendant(target) is { } node)
         {
             window.ViewModel.Navigate(node);
