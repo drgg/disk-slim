@@ -59,7 +59,7 @@
       "category": "系统",
       "paths": ["%SystemRoot%/SoftwareDistribution/Download"],
       "risk": "low",
-      "advice": "用“磁盘清理 → 清理系统文件 → Windows 更新清理”。系统正在下载或安装更新时不要清理。"
+      "advice": "运行 diskslim system run windows-update-cache（需要管理员权限），或用“磁盘清理 → 清理系统文件 → Windows 更新清理”。系统正在下载或安装更新时不要清理。"
     },
     {
       "id": "delivery-optimization",
@@ -67,7 +67,7 @@
       "category": "系统",
       "paths": ["%SystemRoot%/ServiceProfiles/NetworkService/AppData/Local/Microsoft/Windows/DeliveryOptimization/Cache"],
       "risk": "low",
-      "advice": "需要管理员权限才能统计。用“磁盘清理 → 传递优化文件”清理。"
+      "advice": "需要管理员权限才能统计。运行 diskslim system run delivery-optimization，或用“磁盘清理 → 传递优化文件”清理。"
     },
     {
       "id": "error-reports",
@@ -391,7 +391,7 @@
       "category": "系统",
       "paths": ["%SystemDrive%/hiberfil.sys"],
       "risk": "medium",
-      "advice": "如果不用“休眠”，可以在管理员命令行运行 powercfg /h off 关闭，代价是同时失去“快速启动”。"
+      "advice": "如果不用“休眠”，可以运行 diskslim system run hibernation-off 关闭（需要管理员权限），代价是同时失去“快速启动”。"
     },
     {
       "id": "page-file",

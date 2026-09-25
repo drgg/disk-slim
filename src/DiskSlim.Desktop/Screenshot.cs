@@ -71,6 +71,11 @@ internal static class Screenshot
             // 重复文件页：查找一次（只读）。
             await window.ViewModel.Duplicates.SearchAsync();
         }
+        else if (options.Tab == 4)
+        {
+            // 系统清理页：等估算完成（只读，不会运行任何任务）。
+            await window.ViewModel.SystemTasks.RefreshEstimatesAsync();
+        }
         if (options.NavigatePath is { } target && window.ViewModel.MapRoot?.FindDescendant(target) is { } node)
         {
             window.ViewModel.Navigate(node);

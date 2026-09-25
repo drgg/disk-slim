@@ -136,6 +136,10 @@ internal sealed class ConsoleReportRenderer(ConsoleStyle w, int width, bool verb
         {
             w.WriteLine("        " + hint, ConsoleColor.DarkCyan);
         }
+        else if (Core.SystemTasks.SystemTaskCatalog.ForRule(item.Rule.Id) is { } systemTask)
+        {
+            w.WriteLine($"        可用系统清理：diskslim system run {systemTask.Id}（需要管理员权限）", ConsoleColor.DarkCyan);
+        }
 
         if (item.RunningProcesses.Count > 0)
         {

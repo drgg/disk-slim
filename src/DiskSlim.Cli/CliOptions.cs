@@ -9,6 +9,7 @@ internal enum CliCommand
     Clean,
     Quarantine,
     Dupes,
+    System,
 }
 
 internal enum QuarantineVerb
@@ -81,6 +82,14 @@ internal sealed record CliOptions
 
     /// <summary>把建议移除的副本移入隔离区（配合 --execute）。</summary>
     public bool RemoveDuplicates { get; init; }
+
+    // ───── system ─────
+
+    /// <summary>要运行的系统任务；为 null 时列出全部任务。</summary>
+    public string? SystemTaskId { get; init; }
+
+    /// <summary>助手模式：以管理员身份被调用，把结果写到这个文件（只能位于 DiskSlim 的助手目录中）。</summary>
+    public string? ResultFile { get; init; }
 }
 
 internal sealed record ParseResult(CliOptions? Options, string? Error);
@@ -100,6 +109,8 @@ internal static class CliParser
           diskslim quarantine purge --all         彻底删除隔离区中的全部内容
           diskslim dupes [路径...]                查找重复文件（默认查用户目录），只读
           diskslim dupes [路径...] --remove       把建议移除的副本移入隔离区（默认只模拟，加 --execute 执行）
+          diskslim system                         列出系统级清理任务（DISM、更新缓存、休眠文件……）
+          diskslim system run <任务>              说明任务会做什么；加 --execute 执行（需要管理员权限，会弹出 UAC）
 
         通用选项：
           -d, --drive <盘符>    要分析的磁盘，默认是系统盘
@@ -155,10 +166,11 @@ internal static class CliParser
         ["--map-only"] = [CliCommand.Scan],
         ["--list-rules"] = [CliCommand.Scan],
         ["--rule"] = [CliCommand.Clean],
-        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
-        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
-        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
-        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes],
+        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
+        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
+        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
+        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
+        ["--result-file"] = [CliCommand.System],
         ["--expired"] = [CliCommand.Quarantine],
         ["--all"] = [CliCommand.Quarantine],
         ["--days"] = [CliCommand.Quarantine],
@@ -170,7 +182,7 @@ internal static class CliParser
     {
         var options = new CliOptions();
         var start = 0;
-        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes")
+        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system")
         {
             options = options with
             {
@@ -179,6 +191,7 @@ internal static class CliParser
                     "clean" => CliCommand.Clean,
                     "quarantine" => CliCommand.Quarantine,
                     "dupes" => CliCommand.Dupes,
+                    "system" => CliCommand.System,
                     _ => CliCommand.Scan,
                 },
             };
@@ -204,7 +217,7 @@ internal static class CliParser
                 return Fail($"{arg} 只能用于 {string.Join(" 或 ", allowed.Select(c => "diskslim " + c.ToString().ToLowerInvariant()))}");
             }
 
-            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes && !arg.StartsWith('-') && arg != "/?")
+            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System && !arg.StartsWith('-') && arg != "/?")
             {
                 positionals.Add(arg);
                 continue;
@@ -332,6 +345,17 @@ internal static class CliParser
                     options = options with { RemoveDuplicates = true };
                     break;
 
+                case "--result-file":
+                {
+                    if (NonBlank(TakeValue()) is not { } value)
+                    {
+                        return Fail("--result-file 需要一个文件路径");
+                    }
+
+                    options = options with { ResultFile = value };
+                    break;
+                }
+
                 case "--min-size":
                 {
                     var value = TakeValue();
@@ -416,6 +440,32 @@ internal static class CliParser
             }
 
             options = options with { DupesRoots = positionals };
+        }
+
+        if (options.Command == CliCommand.System)
+        {
+            switch (positionals)
+            {
+                case [] or ["list"]:
+                    if (options.Execute)
+                    {
+                        return Fail("请指定要运行的任务，例如 diskslim system run component-store --execute");
+                    }
+
+                    break;
+                case ["run", var taskId]:
+                    options = options with { SystemTaskId = taskId };
+                    break;
+                case ["run"]:
+                    return Fail("请指定要运行的任务（运行 diskslim system 查看）");
+                default:
+                    return Fail($"用法：diskslim system [run <任务>]，而不是 {string.Join(" ", positionals)}");
+            }
+
+            if (options.ResultFile is not null && !(options.Execute && options.AssumeYes && options.SystemTaskId is not null))
+            {
+                return Fail("--result-file 只供图形界面调用管理员助手时使用");
+            }
         }
 
         return new ParseResult(options with { RuleIds = ruleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList() }, null);

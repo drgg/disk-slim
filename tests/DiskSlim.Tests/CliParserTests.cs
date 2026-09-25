@@ -128,6 +128,44 @@ public sealed class CliParserTests
     }
 
     [Fact]
+    public void Parses_system_and_dupes_commands()
+    {
+        var list = CliParser.Parse(["system"]).Options!;
+        var run = CliParser.Parse(["system", "run", "component-store", "--execute"]).Options!;
+        var dupes = CliParser.Parse(["dupes", @"D:\照片", "E:\\", "--min-size", "10MB", "--remove"]).Options!;
+
+        Assert.Equal((CliCommand.System, (string?)null), (list.Command, list.SystemTaskId));
+        Assert.Equal("component-store", run.SystemTaskId);
+        Assert.True(run.Execute);
+        Assert.Equal([@"D:\照片", "E:\\"], dupes.DupesRoots);
+        Assert.Equal(10L << 20, dupes.MinFileSize);
+        Assert.True(dupes.RemoveDuplicates);
+    }
+
+    [Theory]
+    [InlineData("system", "--execute")]                                   // 没有指定任务
+    [InlineData("system", "run")]
+    [InlineData("system", "frob")]
+    [InlineData("system", "run", "x", "--result-file", "r.json")]         // 助手模式必须同时有 --execute --yes
+    [InlineData("dupes", "--execute")]                                    // 必须和 --remove 一起用
+    [InlineData("dupes", "--min-size", "big")]
+    public void Rejects_invalid_system_and_dupes_arguments(params string[] args)
+    {
+        Assert.NotNull(CliParser.Parse(args).Error);
+    }
+
+    [Theory]
+    [InlineData("4096", 4096L)]
+    [InlineData("500KB", 500L * 1024)]
+    [InlineData("10mb", 10L << 20)]
+    [InlineData("1.5G", 3L << 29)]
+    [InlineData("2 GB", 2L << 30)]
+    public void Parses_sizes(string text, long expected)
+    {
+        Assert.Equal(expected, CliParser.ParseSize(text));
+    }
+
+    [Fact]
     public void Help_and_version_flags()
     {
         Assert.True(CliParser.Parse(["-h"]).Options!.ShowHelp);

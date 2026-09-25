@@ -27,6 +27,9 @@ public partial class MainWindow : Window
             MessageBox.Show(this, question, "彻底删除", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
         viewModel.Duplicates.Confirm = question =>
             MessageBox.Show(this, question, "移入隔离区", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+        viewModel.SystemTasks.Confirm = question =>
+            MessageBox.Show(this, question, "系统清理", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+        viewModel.SystemTasks.TaskCompleted += async (_, _) => await viewModel.ScanAsync();
         viewModel.Duplicates.PickFolder = initial =>
         {
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择要查找重复文件的位置", InitialDirectory = Directory.Exists(initial) ? initial : "" };
@@ -65,7 +68,7 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 隔离区）。</summary>
+    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 系统清理，5 = 隔离区）。</summary>
     public void SelectTab(int index) => Tabs.SelectedIndex = index;
 
     private async void OnCleanupRequested(object? sender, CleanupViewModel cleanup)

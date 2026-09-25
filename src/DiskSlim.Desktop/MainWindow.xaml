@@ -354,6 +354,57 @@
                 </Grid>
             </TabItem>
 
+            <!-- ───── 系统清理 ───── -->
+            <TabItem Header="系统清理" DataContext="{Binding SystemTasks}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,14">
+                    <StackPanel>
+                        <TextBlock Text="这些清理需要管理员权限，由 Windows 自带的工具完成（DISM、powercfg 等）。只能运行下面列出的固定任务。" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ElevationNote}" Foreground="{StaticResource SubtleTextBrush}" Margin="0,4,0,12" TextWrapping="Wrap" />
+                        <ItemsControl ItemsSource="{Binding Items}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:SystemTaskItemViewModel}">
+                                    <Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="16,14">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" />
+                                                    <TextBlock Text="{Binding EstimateText}" Margin="12,1,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{StaticResource SubtleTextBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsSizeEstimate}" Value="True">
+                                                                        <Setter Property="Foreground" Value="#2E7D32" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Description}" Foreground="{StaticResource SubtleTextBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                                <TextBlock Text="{Binding Warning}" Foreground="{StaticResource WarningBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <TextBlock Text="{Binding UndoHint}" Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,4,0,0"
+                                                           Visibility="{Binding HasUndoHint, Converter={StaticResource BoolToVisibility}}" />
+                                                <ProgressBar IsIndeterminate="True" Height="4" Margin="0,10,0,0" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                                <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,6,0,0" FontWeight="SemiBold" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="运行…" Style="{StaticResource PrimaryButton}" VerticalAlignment="Top" Margin="16,0,0,0" MinWidth="80"
+                                                    Command="{Binding DataContext.RunTaskCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                    CommandParameter="{Binding}"
+                                                    Visibility="{Binding NotNeeded, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- ───── 隔离区 ───── -->
             <TabItem Header="隔离区" DataContext="{Binding Quarantine}">
                 <Grid Margin="20,14">

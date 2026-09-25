@@ -181,6 +181,34 @@ public sealed class DesktopViewModelTests : IDisposable
     }
 
     [Fact]
+    public void System_tasks_do_nothing_unless_confirmed_and_report_a_missing_helper()
+    {
+        var page = new SystemTasksViewModel { Confirm = _ => false, FindHelper = () => throw new InvalidOperationException("不应该走到这里") };
+        var item = page.Items.First();
+
+        page.RunTaskCommand.Execute(item); // 用户在确认框里点了“否”
+        Assert.Equal("", item.Status);
+
+        page.Confirm = _ => true;
+        page.FindHelper = () => null;
+        page.RunTaskCommand.Execute(item);
+        Assert.Contains("找不到 diskslim.exe", item.Status);
+        Assert.False(item.IsRunning);
+    }
+
+    [Fact]
+    public void System_task_results_are_described_with_the_space_change()
+    {
+        var text = SystemTasksViewModel.Describe(new Core.SystemTasks.SystemTaskResult
+        {
+            TaskId = "hibernation-off", Success = true, Message = "完成。", FreeBytesBefore = 1L << 30, FreeBytesAfter = 3L << 30,
+        });
+
+        Assert.StartsWith("✓ 完成。", text);
+        Assert.Contains("增加 2.00 GB", text);
+    }
+
+    [Fact]
     public async Task Cleanup_dialog_reports_when_there_is_nothing_to_do()
     {
         _dir.WriteFile("cache/fresh.tmp", 10);

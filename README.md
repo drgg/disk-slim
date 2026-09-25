@@ -19,7 +19,7 @@ dotnet run --project src/DiskSlim.Desktop
 dotnet run --project src/DiskSlim.Cli
 ```
 
-或者发布成单个 exe（各约 450 KB）：
+或者发布成单个 exe（`DiskSlimApp.exe` 约 0.7 MB，`diskslim.exe` 约 1.6 MB），**两个要放在同一个文件夹**：
 
 ```bash
 dotnet publish src/DiskSlim.Desktop -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -o dist
@@ -42,6 +42,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
   - 右侧列出当前目录的子项和各自的可清理空间；右键可以在资源管理器中显示。
 - **最大的文件**：最大的 50 个文件。
 - **重复文件**：选择位置和最小文件大小后查找，勾选的副本移入隔离区（见下文）。
+- **系统清理**：DISM 组件存储、Windows 更新缓存、传递优化缓存、关闭休眠，点“运行”后弹出 UAC 提示（见下文）。
 - **隔离区**：查看、恢复或彻底删除之前移入隔离区的内容。
 
 点“清理选中项…”后先弹出**模拟结果**：每一项会怎么处理、多少文件、为什么跳过。点“开始清理”才执行，可以随时“停止”。完成后显示磁盘剩余空间的变化和日志位置，并自动重新扫描。
@@ -54,7 +55,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-dialog dialog.png
 ```
 
-`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 隔离区；`--size 1280x820` 设置窗口大小。
+`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 系统清理（只估算，不运行），5 隔离区；`--size 1280x820` 设置窗口大小。
 
 ## 命令行：查看报告 `diskslim scan`
 
@@ -182,6 +183,29 @@ diskslim dupes --remove --execute
 - **只建议移除明显的副本**：文件名带“(1)”“副本”“- Copy”，或在下载文件夹里。其他重复文件（例如项目里被引用的资源）只列出，由你自己判断——图形界面里可以手动勾选。
 - **移除 = 移入隔离区**，可以恢复。每组至少保留一份；保留的那份在扫描后被改过或删除时整组不动；要移除的文件在扫描后被改过也不动。
 
+## 系统级清理：`diskslim system`
+
+```bash
+diskslim system
+```
+
+```bash
+diskslim system run hibernation-off --execute
+```
+
+| 任务 | 做什么 |
+|---|---|
+| `component-store` | `DISM /Online /Cleanup-Image /StartComponentCleanup`：删除已被替代的旧系统组件。**不用 `/ResetBase`**，已安装的更新仍可卸载 |
+| `windows-update-cache` | 暂停 Windows 更新和后台传输服务 → 删除下载过的更新包 → 把服务恢复成原来的状态（删除失败也一定恢复） |
+| `delivery-optimization` | 系统自带的 `Delete-DeliveryOptimizationCache -Force` |
+| `hibernation-off` | `powercfg /hibernate off`，释放 hiberfil.sys；恢复用 `powercfg /hibernate on` |
+
+- **固定白名单**：只有上面四项，做法写死在代码里，不能通过规则文件或参数修改。系统程序一律用 `C:\Windows\System32` 下的完整路径调用。
+- **默认只说明**，加 `--execute` 并确认后才执行；每一步写入操作日志。
+- **需要管理员权限**：不是管理员时会以管理员身份启动一个 diskslim 助手进程（弹出 UAC 提示），它只接受白名单里的任务，结果只写回 DiskSlim 自己的助手目录。
+- 图形界面的“系统清理”页面也是通过这个助手执行的，所以发布时 `diskslim.exe` 要和 `DiskSlimApp.exe` 放在同一个文件夹。
+- DISM 这类系统维护程序**不支持中途取消**：强行结束可能留下不一致的状态。
+
 ## 退出码
 
 `0` 成功（包括在确认提示里选择了取消），`1` 出错，`2` 参数错误或选择了不能清理的项目，`130` 被 Ctrl+C 取消。设置环境变量 `DISKSLIM_DEBUG=1` 可以看到完整的异常堆栈。
@@ -224,6 +248,7 @@ src/DiskSlim.Core/            扫描、规则和清理引擎（命令行和图�
   Reporting/                  报告模型和报告生成
   Quarantine/                 隔离区：移入、恢复、彻底删除
   Duplicates/                 重复文件查找和移除
+  SystemTasks/                系统级清理任务、管理员助手进程
   Visualization/              方块图布局（Squarified Treemap）、可清理空间索引
   Presentation/               两个界面共用的显示文字
   Platform/                   回收站、管理员权限、进程列表
@@ -246,12 +271,12 @@ dotnet test DiskSlim.slnx
 - 硬链接会被重复计算，所以 `C:\Windows`（尤其是 WinSxS）的数值偏大；uv、pnpm 等用硬链接的缓存，实际释放的空间可能比显示的少。
 - 没有管理员权限时，部分系统目录读不到，相关数值偏小，也清理不了。
 - 模拟运行无法预知哪些文件正被占用，这部分要到真正执行时才知道。
-- Windows 更新缓存、缩略图缓存、Windows.old 等需要系统工具处理，目前只给建议。
+- 缩略图缓存、Windows.old、系统还原点目前只给建议（请用“磁盘清理”）。
 
 ## 路线图
 
 - ~~**v0.1**：只读扫描和报告~~
 - ~~**v0.2**：模拟运行、真实清理、安全防线、操作日志~~
 - ~~**v0.3**：图形界面（方块图、分类勾选、风险颜色）~~
-- **v0.4**：重复文件查找、系统级清理（用管理员权限的助手进程调用 DISM 和磁盘清理）、隔离区和撤销
+- ~~**v0.4**：隔离区和撤销、重复文件查找、系统级清理（管理员助手进程）~~
 - **v0.5**：定时清理、空间增长追踪、扩充国内软件规则
