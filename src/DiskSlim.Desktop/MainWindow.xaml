@@ -262,6 +262,61 @@
                     </ListView>
                 </Border>
             </TabItem>
+            <!-- ───── 隔离区 ───── -->
+            <TabItem Header="隔离区" DataContext="{Binding Quarantine}">
+                <Grid Margin="20,14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <DockPanel Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right" Content="刷新" Command="{Binding RefreshCommand}" VerticalAlignment="Top" />
+                        <StackPanel>
+                            <TextBlock Text="{Binding Summary}" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Foreground="{StaticResource SubtleTextBrush}" Margin="0,4,0,0" TextWrapping="Wrap"
+                                       Text="“需要确认”的项目清理时会先移到这里：随时可以恢复原位，确认没问题后再彻底删除。超过 7 天的内容会作为“可放心清理”的项目出现在清理列表里。" />
+                            <TextBlock Text="{Binding Message}" Foreground="#2E7D32" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </DockPanel>
+                    <Border Grid.Row="1" Style="{StaticResource Card}">
+                        <Grid>
+                            <TextBlock Text="还没有移入隔离区的文件。清理“需要确认”的项目后，它们会出现在这里。" Foreground="{StaticResource SubtleTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="{Binding HasSessions, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Sessions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:QuarantineSessionViewModel}">
+                                            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,12">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Description}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding DetailText}" Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,3,0,0" />
+                                                        <TextBlock Text="{Binding Id}" Foreground="{StaticResource SubtleTextBrush}" FontSize="11" Margin="0,2,0,0" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding SizeText}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" Margin="16,0" />
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Content="恢复" Margin="0,0,8,0" ToolTip="把这一批文件放回原来的位置（不会覆盖已有文件）"
+                                                                Command="{Binding DataContext.RestoreCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                        <Button Content="彻底删除" Style="{StaticResource DangerButton}" ToolTip="删除后无法恢复，会释放空间"
+                                                                Command="{Binding DataContext.PurgeCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
         </TabControl>
 
         <!-- 扫描中遮罩 -->

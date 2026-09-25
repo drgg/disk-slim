@@ -89,6 +89,44 @@ public sealed class CliParserTests
         Assert.NotNull(CliParser.Parse(args).Error);
     }
 
+    [Theory]
+    [InlineData(new[] { "quarantine" }, "List", null)]
+    [InlineData(new[] { "quarantine", "list" }, "List", null)]
+    [InlineData(new[] { "quarantine", "restore", "20260925-101500-ab12" }, "Restore", "20260925-101500-ab12")]
+    [InlineData(new[] { "quarantine", "purge", "abc", "--execute", "-y" }, "Purge", "abc")]
+    public void Parses_quarantine_commands(string[] args, string verb, string? id)
+    {
+        var options = CliParser.Parse(args).Options!;
+
+        Assert.Equal(CliCommand.Quarantine, options.Command);
+        Assert.Equal(Enum.Parse<QuarantineVerb>(verb), options.QuarantineVerb);
+        Assert.Equal(id, options.QuarantineId);
+    }
+
+    [Fact]
+    public void Parses_quarantine_purge_of_expired_sessions()
+    {
+        var options = CliParser.Parse(["quarantine", "purge", "--expired", "--days", "14"]).Options!;
+
+        Assert.True(options.PurgeExpired);
+        Assert.Equal(14, options.ExpiryDays);
+        Assert.False(options.Execute);
+    }
+
+    [Theory]
+    [InlineData("quarantine", "restore")]                    // 缺少批次
+    [InlineData("quarantine", "purge")]                      // 没说删什么
+    [InlineData("quarantine", "purge", "abc", "--all")]      // 只能选一种
+    [InlineData("quarantine", "frobnicate")]
+    [InlineData("quarantine", "list", "abc")]
+    [InlineData("quarantine", "--rule", "x")]                // --rule 只能用于 clean
+    [InlineData("clean", "--expired")]                       // --expired 只能用于 quarantine
+    [InlineData("scan", "extra-positional")]
+    public void Rejects_invalid_quarantine_arguments(params string[] args)
+    {
+        Assert.NotNull(CliParser.Parse(args).Error);
+    }
+
     [Fact]
     public void Help_and_version_flags()
     {

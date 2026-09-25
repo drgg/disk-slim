@@ -7,6 +7,14 @@ internal enum CliCommand
 {
     Scan,
     Clean,
+    Quarantine,
+}
+
+internal enum QuarantineVerb
+{
+    List,
+    Restore,
+    Purge,
 }
 
 internal sealed record CliOptions
@@ -50,6 +58,18 @@ internal sealed record CliOptions
     public bool AssumeYes { get; init; }
 
     public string? LogPath { get; init; }
+
+    // ───── quarantine ─────
+    public QuarantineVerb QuarantineVerb { get; init; } = QuarantineVerb.List;
+
+    public string? QuarantineId { get; init; }
+
+    public bool PurgeExpired { get; init; }
+
+    public bool PurgeAll { get; init; }
+
+    /// <summary>--expired 时多少天算到期。</summary>
+    public int ExpiryDays { get; init; } = 7;
 }
 
 internal sealed record ParseResult(CliOptions? Options, string? Error);
@@ -60,8 +80,13 @@ internal static class CliParser
         DiskSlim 硬盘瘦身 —— 分析磁盘空间，安全地清理缓存和临时文件。
 
         用法：
-          diskslim [scan] [选项]     只读扫描，生成报告（默认）
-          diskslim clean [选项]      清理。默认只模拟，加 --execute 才会真正执行
+          diskslim [scan] [选项]                  只读扫描，生成报告（默认）
+          diskslim clean [选项]                   清理。默认只模拟，加 --execute 才会真正执行
+          diskslim quarantine                     列出隔离区
+          diskslim quarantine restore <批次>      把一批文件恢复到原来的位置（不会覆盖任何文件）
+          diskslim quarantine purge <批次>        彻底删除一批，释放空间（默认只模拟，加 --execute 执行）
+          diskslim quarantine purge --expired     彻底删除超过 7 天的批次（--days 修改天数）
+          diskslim quarantine purge --all         彻底删除隔离区中的全部内容
 
         通用选项：
           -d, --drive <盘符>    要分析的磁盘，默认是系统盘
@@ -87,6 +112,9 @@ internal static class CliParser
           -y, --yes             执行前不再询问确认
               --log <文件>      操作日志的保存位置，默认 %LOCALAPPDATA%\DiskSlim\logs
 
+        “需要确认”的项目默认移入隔离区：可以随时恢复，彻底删除后才释放空间；
+        超过 7 天的隔离内容会作为“可放心清理”的项目出现在 diskslim clean 里。
+
         示例：
           diskslim                                 查看完整报告
           diskslim clean                           模拟清理所有“可放心清理”的项目
@@ -97,28 +125,42 @@ internal static class CliParser
 
         """;
 
-    private static readonly HashSet<string> ScanOnly = new(StringComparer.Ordinal)
+    /// <summary>只能用于特定命令的选项；不在表里的选项所有命令都能用。</summary>
+    private static readonly Dictionary<string, CliCommand[]> CommandSpecific = new(StringComparer.Ordinal)
     {
-        "-n", "--top", "--json", "--md", "--rules-only", "--map-only", "--list-rules",
-    };
-
-    private static readonly HashSet<string> CleanOnly = new(StringComparer.Ordinal)
-    {
-        "--rule", "--execute", "-y", "--yes", "--log",
+        ["-n"] = [CliCommand.Scan],
+        ["--top"] = [CliCommand.Scan],
+        ["--json"] = [CliCommand.Scan],
+        ["--md"] = [CliCommand.Scan],
+        ["--rules-only"] = [CliCommand.Scan],
+        ["--map-only"] = [CliCommand.Scan],
+        ["--list-rules"] = [CliCommand.Scan],
+        ["--rule"] = [CliCommand.Clean],
+        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine],
+        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine],
+        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine],
+        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine],
+        ["--expired"] = [CliCommand.Quarantine],
+        ["--all"] = [CliCommand.Quarantine],
+        ["--days"] = [CliCommand.Quarantine],
     };
 
     public static ParseResult Parse(IReadOnlyList<string> args)
     {
         var options = new CliOptions();
         var start = 0;
-        if (args.Count > 0 && args[0] is "scan" or "clean")
+        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine")
         {
-            options = options with { Command = args[0] == "clean" ? CliCommand.Clean : CliCommand.Scan };
+            options = options with
+            {
+                Command = args[0] switch { "clean" => CliCommand.Clean, "quarantine" => CliCommand.Quarantine, _ => CliCommand.Scan },
+            };
             start = 1;
         }
 
         var onlyFlags = 0;
         var ruleIds = new List<string>();
+        var positionals = new List<string>();
 
         for (var i = start; i < args.Count; i++)
         {
@@ -130,14 +172,15 @@ internal static class CliParser
                 arg = arg[..eq];
             }
 
-            if (options.Command == CliCommand.Scan && CleanOnly.Contains(arg))
+            if (CommandSpecific.TryGetValue(arg, out var allowed) && !allowed.Contains(options.Command))
             {
-                return Fail($"{arg} 只能用于 diskslim clean");
+                return Fail($"{arg} 只能用于 {string.Join(" 或 ", allowed.Select(c => "diskslim " + c.ToString().ToLowerInvariant()))}");
             }
 
-            if (options.Command == CliCommand.Clean && ScanOnly.Contains(arg))
+            if (options.Command == CliCommand.Quarantine && !arg.StartsWith('-') && arg != "/?")
             {
-                return Fail($"{arg} 只能用于 diskslim scan");
+                positionals.Add(arg);
+                continue;
             }
 
             string? TakeValue()
@@ -250,6 +293,26 @@ internal static class CliParser
                     options = options with { Execute = true };
                     break;
 
+                case "--expired":
+                    options = options with { PurgeExpired = true };
+                    break;
+
+                case "--all":
+                    options = options with { PurgeAll = true };
+                    break;
+
+                case "--days":
+                {
+                    var value = TakeValue();
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var days) || days is < 0 or > 3650)
+                    {
+                        return Fail("--days 需要 0 到 3650 之间的整数");
+                    }
+
+                    options = options with { ExpiryDays = days };
+                    break;
+                }
+
                 case "-y" or "--yes":
                     options = options with { AssumeYes = true };
                     break;
@@ -291,7 +354,54 @@ internal static class CliParser
             return Fail("--yes 需要和 --execute 一起使用");
         }
 
+        if (options.Command == CliCommand.Quarantine)
+        {
+            var parsedQuarantine = ParseQuarantine(options, positionals);
+            if (parsedQuarantine.Error is not null)
+            {
+                return parsedQuarantine;
+            }
+
+            options = parsedQuarantine.Options!;
+        }
+
         return new ParseResult(options with { RuleIds = ruleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList() }, null);
+    }
+
+    private static ParseResult ParseQuarantine(CliOptions options, List<string> positionals)
+    {
+        var verb = positionals.Count == 0 ? "list" : positionals[0];
+        var id = positionals.Count > 1 ? positionals[1] : null;
+        if (positionals.Count > 2)
+        {
+            return Fail($"多余的参数：{string.Join(" ", positionals.Skip(2))}");
+        }
+
+        switch (verb)
+        {
+            case "list":
+                return id is null ? new(options with { QuarantineVerb = QuarantineVerb.List }, null) : Fail("quarantine list 不需要批次");
+
+            case "restore":
+                if (id is null)
+                {
+                    return Fail("请指定要恢复的批次，例如 diskslim quarantine restore 20260925-101500-ab12（运行 diskslim quarantine 查看）");
+                }
+
+                return new(options with { QuarantineVerb = QuarantineVerb.Restore, QuarantineId = id }, null);
+
+            case "purge":
+                var choices = (id is null ? 0 : 1) + (options.PurgeExpired ? 1 : 0) + (options.PurgeAll ? 1 : 0);
+                if (choices != 1)
+                {
+                    return Fail("请指定要彻底删除的内容：一个批次、--expired 或 --all（只能选一个）");
+                }
+
+                return new(options with { QuarantineVerb = QuarantineVerb.Purge, QuarantineId = id }, null);
+
+            default:
+                return Fail($"未知的 quarantine 操作：{verb}。可用的有 list、restore、purge。");
+        }
     }
 
     /// <summary>把 "d"、"D:"、"d:\"、"D:/" 统一成 "D:\"。</summary>

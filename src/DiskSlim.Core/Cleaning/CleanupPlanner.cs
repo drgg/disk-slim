@@ -51,7 +51,8 @@ public sealed record CleanupPlan
 public sealed class CleanupSelectionException(string message) : Exception(message);
 
 /// <summary>根据规则和用户的选择生成清理计划。只读取，不删除。</summary>
-public sealed class CleanupPlanner(SafetyGuard guard, IReadOnlySet<string> runningProcesses)
+/// <param name="quarantine">隔离区；为 null 时使用计划所在磁盘的默认隔离区。</param>
+public sealed class CleanupPlanner(SafetyGuard guard, IReadOnlySet<string> runningProcesses, Quarantine.QuarantineStore? quarantine = null, TimeProvider? time = null)
 {
     /// <param name="ruleIds">点名的规则；为空时选中所有“可放心清理”并且有清理方式的规则。</param>
     /// <exception cref="CleanupSelectionException">点名的规则不存在或不能清理。</exception>
@@ -129,6 +130,14 @@ public sealed class CleanupPlanner(SafetyGuard guard, IReadOnlySet<string> runni
         {
             var bin = RecycleBin.Query(driveRoot);
             var status = bin is { ItemCount: > 0 } ? PlanStatus.Ready : PlanStatus.NothingFound;
+            return new PlannedRule { Rule = rule, Status = status, ExplicitlySelected = explicitlySelected };
+        }
+
+        if (rule.Action == CleanupAction.PurgeQuarantine)
+        {
+            var store = quarantine ?? Quarantine.QuarantineStore.ForDrive(driveRoot);
+            var cutoff = FileAge.Cutoff(rule.MinAgeDays, time ?? TimeProvider.System);
+            var status = store.ListSessions().Any(s => cutoff is not { } c || s.CreatedAt < c) ? PlanStatus.Ready : PlanStatus.NothingFound;
             return new PlannedRule { Rule = rule, Status = status, ExplicitlySelected = explicitlySelected };
         }
 

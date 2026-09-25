@@ -83,7 +83,12 @@ internal static class CliApp
         try
         {
             var context = new CliContext(options, rules, style, stderr, stdin, interactive ?? !Console.IsInputRedirected, width, cts.Token);
-            return options.Command == CliCommand.Clean ? CleanCommand.Run(context) : ScanCommand.Run(context);
+            return options.Command switch
+            {
+                CliCommand.Clean => CleanCommand.Run(context),
+                CliCommand.Quarantine => QuarantineCommand.Run(context),
+                _ => ScanCommand.Run(context),
+            };
         }
         finally
         {

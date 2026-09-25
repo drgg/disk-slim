@@ -23,6 +23,8 @@ public partial class MainWindow : Window
 
         viewModel.CleanupRequested += OnCleanupRequested;
         viewModel.RestartAsAdminRequested += OnRestartAsAdmin;
+        viewModel.Quarantine.ConfirmPurge = question =>
+            MessageBox.Show(this, question, "彻底删除", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
         Treemap.TileClicked += (_, e) =>
         {
             if (e.Tile is { Kind: TileKind.Directory, Node: { } node })
@@ -56,7 +58,7 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件）。</summary>
+    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 隔离区）。</summary>
     public void SelectTab(int index) => Tabs.SelectedIndex = index;
 
     private async void OnCleanupRequested(object? sender, CleanupViewModel cleanup)

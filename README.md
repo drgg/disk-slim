@@ -91,7 +91,7 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 | 风险等级 | 默认 | 说明 |
 |---|---|---|
 | 可放心清理 | 自动选中 | 缓存和临时文件，删除后会自动重建 |
-| 需要确认 | 必须用 `--rule <id>` 点名 | 删除后要重新下载，或需要你判断（回收站、NuGet 包目录……） |
+| 需要确认 | 必须用 `--rule <id>` 点名 | 删除后要重新下载，或需要你判断（回收站、NuGet 包目录……）；默认移入隔离区，可以撤销 |
 | 仅供参考 | **工具拒绝清理**，点名也不行 | 聊天记录、下载文件夹、系统文件 |
 
 用 `--rule` 点名后，只清理点名的项目。
@@ -100,9 +100,34 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 
 | 方式 | 用于 | 说明 |
 |---|---|---|
-| 永久删除 | 缓存、临时文件 | 删除目录里的文件，**目录本身保留**；清空了的子目录一并删除 |
+| 永久删除 | “可放心清理”的缓存、临时文件 | 删除目录里的文件，**目录本身保留**；清空了的子目录一并删除 |
+| 移入隔离区 | “需要确认”的内容（NuGet 包目录、模型缓存……） | 瞬间移走，**随时可以恢复**；确认没问题后再彻底删除才释放空间 |
 | 移到回收站 | 用户文件（如下载的安装包） | 可以找回；如果文件放不进回收站，会弹窗确认，绝不悄悄永久删除 |
 | 清空回收站 | 回收站 | |
+| 彻底删除 | 隔离区中超过 7 天的内容 | 作为“可放心清理”的项目出现在 `diskslim clean` 里 |
+
+### 隔离区
+
+“需要确认”的项目不会被直接永久删除，而是先移入隔离区：
+
+- 位置和原文件在同一块盘上（系统盘是 `%LOCALAPPDATA%\DiskSlim\Quarantine`，其他盘是 `盘符:\DiskSlim.Quarantine`），所以移入只是改名，瞬间完成。
+- 每次清理是一批，清单记录每个文件原来的位置。清单是先写后移，程序中途崩溃也不会丢失原始位置。
+- **恢复永远不覆盖**：原位置已经有同名文件时跳过并报告。
+- 隔离区里的文件还占着空间，彻底删除后才释放。超过 7 天的批次会出现在下一次 `diskslim clean` 的“可放心清理”里。
+
+```bash
+diskslim quarantine
+```
+
+```bash
+diskslim quarantine restore 20260925-105141-043b
+```
+
+```bash
+diskslim quarantine purge --expired --execute
+```
+
+`purge` 也可以指定一个批次或用 `--all`；和 `clean` 一样默认只模拟，加 `--execute` 并确认后才删除。图形界面里有“隔离区”页面，清理完成的对话框里也可以一键撤销。
 
 ### 安全设计
 
@@ -132,7 +157,7 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 {"time":"2026-09-24T18:33:40+08:00","event":"deleted","rule":"npm-cache","path":"C:\\Users\\...\\index-v5\\00\\a1","bytes":16384}
 ```
 
-`event` 的取值：`run-start`、`rule-start`、`deleted`、`recycled`、`removed-dir`、`emptied-recycle-bin`、`failed`、`rule-end`、`run-end`。
+`event` 的取值：`run-start`、`rule-start`、`deleted`、`recycled`、`quarantined`、`removed-dir`、`emptied-recycle-bin`、`purged-quarantine`、`failed`、`rule-end`、`run-end`。
 
 ## 退出码
 
@@ -140,7 +165,7 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 
 ## 规则文件
 
-内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 42 条，其中 26 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
+内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 43 条，其中 27 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
 
 ```jsonc
 {
@@ -152,7 +177,7 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
       "category": "应用",
       "paths": ["%LOCALAPPDATA%/NetEase/CloudMusic/Cache"],  // 必填，支持环境变量和 * ? 通配符
       "risk": "low",                          // 必填：low / medium / high
-      "action": "delete",                     // 可选：none（默认）/ delete / recycle / empty-recycle-bin
+      "action": "delete",                     // 可选：none（默认）/ delete / quarantine / recycle / empty-recycle-bin / purge-quarantine
       "minAgeDays": 1,                        // 可选：只处理 N 天前的文件
       "processes": ["cloudmusic"],            // 可选：这些程序运行时跳过
       "advice": "在网易云音乐的设置里清除缓存……"

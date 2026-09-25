@@ -63,6 +63,8 @@ public sealed class MainViewModel : ObservableObject
 
     public ObservableCollection<LargeFileViewModel> LargestFiles { get; } = [];
 
+    public QuarantineViewModel Quarantine { get; } = new();
+
     public AsyncRelayCommand ScanCommand { get; }
 
     public RelayCommand CancelScanCommand { get; }
@@ -159,6 +161,7 @@ public sealed class MainViewModel : ObservableObject
 
             var report = await task;
             Apply(report, builder.MapResult);
+            Quarantine.Load(drive.Root);
             StatusText = $"扫描完成，用时 {stopwatch.Elapsed.TotalSeconds:0.0} 秒。" + (IsElevated ? "" : "当前不是管理员权限，部分系统目录无法读取。");
         }
         catch (OperationCanceledException)

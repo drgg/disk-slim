@@ -47,7 +47,7 @@ internal static class CleanCommand
             return CliApp.ExitOk;
         }
 
-        if (preview.Rules.Sum(r => r.Files) == 0)
+        if (preview.TotalFiles == 0)
         {
             context.Style.WriteLine();
             context.Style.WriteLine("  没有需要清理的内容。");

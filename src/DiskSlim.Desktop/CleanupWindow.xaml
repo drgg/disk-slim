@@ -60,6 +60,9 @@
         <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="22,12">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="撤销（从隔离区恢复）" Command="{Binding UndoQuarantineCommand}" Margin="0,0,8,0"
+                            ToolTip="把这次移入隔离区的文件全部恢复到原来的位置"
+                            Visibility="{Binding CanUndoQuarantine, Converter={StaticResource BoolToVisibility}}" />
                     <Button Content="打开日志所在文件夹" Command="{Binding OpenLogFolderCommand}" Margin="0,0,8,0"
                             Visibility="{Binding HasLog, Converter={StaticResource BoolToVisibility}}" />
                     <Button Content="{Binding CancelText}" Command="{Binding CancelCommand}" MinWidth="80" Margin="0,0,8,0" />

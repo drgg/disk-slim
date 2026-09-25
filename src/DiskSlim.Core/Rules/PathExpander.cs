@@ -17,8 +17,17 @@ public static partial class PathExpander
         RecurseSubdirectories = false,
     };
 
+    /// <summary>表示 DiskSlim 自己的隔离区的特殊路径。</summary>
+    public const string QuarantineToken = "::Quarantine";
+
     public static bool IsRecycleBin(string pattern) =>
         string.Equals(pattern.Trim(), RecycleBinToken, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsQuarantine(string pattern) =>
+        string.Equals(pattern.Trim(), QuarantineToken, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>是否是 ::RecycleBin、::Quarantine 这类特殊路径（不是真实路径，不参与展开）。</summary>
+    public static bool IsSpecial(string pattern) => IsRecycleBin(pattern) || IsQuarantine(pattern);
 
     /// <summary>
     /// 展开环境变量和通配符，返回实际存在的文件或目录（按路径排序）。

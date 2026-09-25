@@ -10,7 +10,9 @@
   //            none              = 工具不清理，只给建议
   //            delete            = 永久删除其中的文件（目录本身保留），适合缓存和临时文件
   //            recycle           = 把文件移到回收站，适合用户文件
+  //            quarantine        = 移入 DiskSlim 的隔离区，可以随时恢复，适合“需要确认”的内容
   //            empty-recycle-bin = 清空回收站
+  //            purge-quarantine  = 彻底删除隔离区中超过 minAgeDays 天的内容
   //            risk 为 high 的规则不能设置 action。
   // minAgeDays 只把 N 天前修改（或创建）过的文件计为“可释放”，清理时也只删这些文件。
   // processes  这些程序运行时跳过这条规则（不带 .exe）。
@@ -18,6 +20,18 @@
   // 同一个路径只算给第一条命中它的规则：具体的规则放前面，宽泛的规则放后面。
   "version": 1,
   "rules": [
+    // ───────────── DiskSlim 自己的隔离区 ─────────────
+    {
+      "id": "quarantine-expired",
+      "name": "隔离区中超过 7 天的内容",
+      "action": "purge-quarantine",
+      "category": "DiskSlim",
+      "paths": ["::Quarantine"],
+      "risk": "low",
+      "minAgeDays": 7,
+      "advice": "之前清理时移入隔离区的文件，已经放了 7 天以上，一般可以彻底删除了。想先看看或恢复：diskslim quarantine。"
+    },
+
     // ───────────── 系统临时文件 ─────────────
     {
       "id": "user-temp",
@@ -152,7 +166,7 @@
     {
       "id": "electron-web-cache",
       "name": "桌面软件的网页缓存",
-      "action": "delete",
+      "action": "quarantine",
       "category": "应用",
       "paths": [
         "%APPDATA%/*/Cache/Cache_Data",
@@ -168,7 +182,7 @@
     {
       "id": "jianying-cache",
       "name": "剪映缓存",
-      "action": "delete",
+      "action": "quarantine",
       "category": "应用",
       "paths": ["%LOCALAPPDATA%/JianyingPro/User Data/Cache"],
       "risk": "medium",
@@ -246,7 +260,7 @@
     {
       "id": "nuget-packages",
       "name": "NuGet 全局包目录",
-      "action": "delete",
+      "action": "quarantine",
       "category": "开发",
       "paths": ["%USERPROFILE%/.nuget/packages"],
       "risk": "medium",
@@ -255,7 +269,7 @@
     {
       "id": "gradle-caches",
       "name": "Gradle 缓存",
-      "action": "delete",
+      "action": "quarantine",
       "category": "开发",
       "paths": ["%USERPROFILE%/.gradle/caches"],
       "risk": "medium",
@@ -264,7 +278,7 @@
     {
       "id": "maven-repository",
       "name": "Maven 本地仓库",
-      "action": "delete",
+      "action": "quarantine",
       "category": "开发",
       "paths": ["%USERPROFILE%/.m2/repository"],
       "risk": "medium",
@@ -291,7 +305,7 @@
     {
       "id": "puccinialin",
       "name": "Python 构建用的 Rust 工具链",
-      "action": "delete",
+      "action": "quarantine",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/puccinialin"],
       "risk": "medium",
@@ -300,7 +314,7 @@
     {
       "id": "playwright-browsers",
       "name": "Playwright 浏览器",
-      "action": "delete",
+      "action": "quarantine",
       "category": "开发",
       "paths": ["%LOCALAPPDATA%/ms-playwright"],
       "risk": "medium",
@@ -309,7 +323,7 @@
     {
       "id": "huggingface-cache",
       "name": "Hugging Face 模型缓存",
-      "action": "delete",
+      "action": "quarantine",
       "category": "开发",
       "paths": ["%USERPROFILE%/.cache/huggingface"],
       "risk": "medium",

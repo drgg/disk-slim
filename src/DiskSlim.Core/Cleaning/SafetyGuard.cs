@@ -77,7 +77,25 @@ public sealed class SafetyGuard
             Path.Combine(roaming, "Microsoft", "Crypto"),
             Path.Combine(roaming, "Microsoft", "Protect"),
             Path.Combine(roaming, "Microsoft", "SystemCertificates"),
+
+            // DiskSlim 自己的操作日志和隔离区：只能通过隔离区的恢复 / 彻底删除来处理。
+            Path.Combine(local, "DiskSlim"),
         };
+
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (drive.DriveType is DriveType.Fixed or DriveType.Removable)
+                {
+                    forbidden.Add(Quarantine.QuarantineStore.DefaultRoot(drive.RootDirectory.FullName));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 读不到的盘不影响其他保护。
+            }
+        }
 
         return new SafetyGuard(critical, forbidden);
     }

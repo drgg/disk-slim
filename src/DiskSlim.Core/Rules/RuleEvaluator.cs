@@ -37,15 +37,18 @@ public sealed class RuleEvaluator
     private readonly IReadOnlySet<string> _runningProcesses;
     private readonly TimeProvider _time;
     private readonly RuleMatcher _matcher;
+    private readonly Quarantine.QuarantineStore _quarantine;
 
     /// <param name="driveRoot">只统计位于这个磁盘上的路径，例如 <c>C:\</c>。</param>
     /// <param name="runningProcesses">当前运行的进程名；为 null 时不检查。</param>
-    public RuleEvaluator(string driveRoot, IReadOnlySet<string>? runningProcesses = null, TimeProvider? time = null)
+    /// <param name="quarantine">这块盘上的隔离区；为 null 时使用默认位置。</param>
+    public RuleEvaluator(string driveRoot, IReadOnlySet<string>? runningProcesses = null, TimeProvider? time = null, Quarantine.QuarantineStore? quarantine = null)
     {
         _driveRoot = driveRoot;
         _runningProcesses = runningProcesses ?? new HashSet<string>();
         _time = time ?? TimeProvider.System;
         _matcher = new RuleMatcher(driveRoot);
+        _quarantine = quarantine ?? Quarantine.QuarantineStore.ForDrive(driveRoot);
     }
 
     public RuleResult Evaluate(CleanupRule rule, CancellationToken cancellationToken = default)
@@ -59,10 +62,17 @@ public sealed class RuleEvaluator
             matches.Add(new RuleMatch($"回收站（{_driveRoot}）", bin.Bytes, bin.Bytes, bin.ItemCount, 0));
         }
 
+        if (rule.Paths.Any(PathExpander.IsQuarantine) && _quarantine.ListSessions() is { Count: > 0 } sessions)
+        {
+            // 总大小是整个隔离区；可释放的是超过 minAgeDays 天的批次。
+            var expired = sessions.Where(s => cutoff is not { } c || s.CreatedAt < c).ToList();
+            matches.Add(new RuleMatch(_quarantine.Root, sessions.Sum(s => s.TotalBytes), expired.Sum(s => s.TotalBytes), sessions.Sum(s => s.Items.Count), 0));
+        }
+
         foreach (var target in _matcher.Match(rule))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            matches.Add(Measure(target, cutoff, rule.Action is CleanupAction.Delete or CleanupAction.Recycle, cancellationToken));
+            matches.Add(Measure(target, cutoff, rule.Action is CleanupAction.Delete or CleanupAction.Recycle or CleanupAction.Quarantine, cancellationToken));
         }
 
         return new RuleResult { Rule = rule, Matches = matches, RunningProcesses = RunningOf(rule, _runningProcesses) };

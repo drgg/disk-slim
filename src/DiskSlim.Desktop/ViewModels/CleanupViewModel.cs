@@ -4,6 +4,7 @@ using DiskSlim.Core.Cleaning;
 using DiskSlim.Core.Formatting;
 using DiskSlim.Core.Platform;
 using DiskSlim.Core.Presentation;
+using DiskSlim.Core.Quarantine;
 using DiskSlim.Core.Rules;
 
 namespace DiskSlim.Desktop.ViewModels;
@@ -62,7 +63,9 @@ public sealed class CleanupViewModel : ObservableObject
     private readonly IReadOnlyList<string> _ruleIds;
     private readonly IFileOperations? _operations;
     private readonly string? _logPath;
+    private readonly QuarantineStore? _quarantine;
     private CleanupPlan? _plan;
+    private bool _undone;
     private CancellationTokenSource? _runCts;
     private CleanupStage _stage = CleanupStage.Preparing;
     private string _title = "正在生成清理计划…";
@@ -71,17 +74,21 @@ public sealed class CleanupViewModel : ObservableObject
     private string _footerText = "";
     private string? _logFilePath;
 
-    public CleanupViewModel(RuleSet rules, string driveRoot, IReadOnlyList<string> ruleIds, IFileOperations? operations = null, string? logPath = null)
+    public CleanupViewModel(RuleSet rules, string driveRoot, IReadOnlyList<string> ruleIds, IFileOperations? operations = null, string? logPath = null, QuarantineStore? quarantine = null)
     {
         _rules = rules;
         _driveRoot = driveRoot;
         _ruleIds = ruleIds;
         _operations = operations;
         _logPath = logPath;
+        _quarantine = quarantine;
         StartCommand = new AsyncRelayCommand(StartAsync, () => Stage == CleanupStage.Confirm);
         CancelCommand = new RelayCommand(Cancel);
         OpenLogFolderCommand = new RelayCommand(OpenLogFolder, () => LogFilePath is not null);
+        UndoQuarantineCommand = new RelayCommand(UndoQuarantine, () => CanUndoQuarantine);
     }
+
+    public RelayCommand UndoQuarantineCommand { get; }
 
     /// <summary>对话框应该关闭。</summary>
     public event EventHandler? CloseRequested;
@@ -154,7 +161,7 @@ public sealed class CleanupViewModel : ObservableObject
         try
         {
             var running = SystemInfo.RunningProcessNames();
-            _plan = new CleanupPlanner(SafetyGuard.ForCurrentUser(), running).Plan(_rules, _driveRoot, _ruleIds);
+            _plan = new CleanupPlanner(SafetyGuard.ForCurrentUser(), running, _quarantine).Plan(_rules, _driveRoot, _ruleIds);
         }
         catch (CleanupSelectionException ex)
         {
@@ -162,7 +169,7 @@ public sealed class CleanupViewModel : ObservableObject
             return;
         }
 
-        var simulator = new CleanupExecutor(_operations);
+        var simulator = new CleanupExecutor(_operations, quarantine: _quarantine);
         var preview = await Track(Task.Run(() => simulator.Execute(_plan, dryRun: true)), () => $"正在检查：{simulator.CurrentRule} · {simulator.FilesVisited:N0} 个文件");
 
         Items.Clear();
@@ -171,7 +178,7 @@ public sealed class CleanupViewModel : ObservableObject
             Items.Add(CleanupItemViewModel.From(outcome, executed: false));
         }
 
-        if (preview.DeletedFiles + preview.RecycledFiles == 0)
+        if (preview.TotalFiles == 0)
         {
             Title = "没有需要清理的内容";
             Headline = "选中的项目里没有满足条件的文件（可能程序正在运行、文件太新，或者需要管理员权限）。";
@@ -219,7 +226,7 @@ public sealed class CleanupViewModel : ObservableObject
         CleanupResult result;
         using (log)
         {
-            var executor = new CleanupExecutor(_operations, log);
+            var executor = new CleanupExecutor(_operations, log, quarantine: _quarantine);
             result = await Track(Task.Run(() => executor.Execute(_plan, dryRun: false, cts.Token)), () => $"{executor.CurrentRule} · 已处理 {ByteSize.Format(executor.BytesCleaned)}");
         }
 
@@ -235,10 +242,37 @@ public sealed class CleanupViewModel : ObservableObject
         }
 
         Title = result.Cancelled ? "已停止" : "清理完成";
-        Headline = DisplayText.FreeSpaceChange(result)
-            + (result.RecycledBytes > 0 ? $"。另有 {ByteSize.Format(result.RecycledBytes)} 移到了回收站，清空回收站后才会释放。" : "。");
+        Headline = DisplayText.FreeSpaceChange(result) + "。" + DisplayText.PendingSpaceNote(result);
         FooterText = $"操作日志：{result.LogPath}";
         Stage = CleanupStage.Done;
+        OnPropertyChanged(nameof(CanUndoQuarantine));
+        UndoQuarantineCommand.RaiseCanExecuteChanged();
+    }
+
+    /// <summary>这次清理有文件移入了隔离区，可以一键撤销。</summary>
+    public bool CanUndoQuarantine => Result?.QuarantineSessionId is not null && !_undone;
+
+    /// <summary>把这次移入隔离区的文件全部恢复原位。</summary>
+    internal void UndoQuarantine()
+    {
+        if (Result?.QuarantineSessionId is not { } id || _undone)
+        {
+            return;
+        }
+
+        var store = _quarantine ?? QuarantineStore.ForDrive(_driveRoot);
+        if (store.Find(id) is not { } session)
+        {
+            Headline = "隔离区里找不到这一批了（可能已经恢复或删除）。";
+            return;
+        }
+
+        var restored = store.Restore(session, SafetyGuard.ForCurrentUser());
+        _undone = true;
+        Headline = $"已撤销：{restored.Restored:N0} 个文件（{ByteSize.Format(restored.RestoredBytes)}）恢复到了原来的位置。"
+            + (restored.Problems.Count > 0 ? $"{restored.Problems.Count:N0} 个没有恢复，仍在隔离区中。" : "");
+        OnPropertyChanged(nameof(CanUndoQuarantine));
+        UndoQuarantineCommand.RaiseCanExecuteChanged();
     }
 
     private void Cancel()

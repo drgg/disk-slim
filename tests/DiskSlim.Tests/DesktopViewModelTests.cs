@@ -110,6 +110,33 @@ public sealed class DesktopViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleanup_dialog_can_undo_what_it_moved_into_quarantine()
+    {
+        _dir.WriteFile("models/big.bin", 8192, Old);
+        var store = new Core.Quarantine.QuarantineStore(_dir.PathOf("quarantine"));
+        var rules = new RuleSet
+        {
+            Rules = [new CleanupRule { Id = "models", Name = "模型缓存", Risk = RiskLevel.Medium, Action = CleanupAction.Quarantine, Paths = [_dir.PathOf("models")] }],
+        };
+        var cleanup = new CleanupViewModel(rules, _drive, ["models"], logPath: _dir.PathOf("logs/q.jsonl"), quarantine: store);
+
+        await cleanup.PrepareAsync();
+        Assert.Contains("移入隔离区", cleanup.Headline);
+        Assert.False(cleanup.CanUndoQuarantine);
+
+        await cleanup.StartAsync();
+        Assert.False(File.Exists(_dir.PathOf("models/big.bin")));
+        Assert.True(cleanup.CanUndoQuarantine);
+        Assert.Contains("彻底删除后才释放空间", cleanup.Headline);
+
+        cleanup.UndoQuarantine();
+
+        Assert.Equal(8192, new FileInfo(_dir.PathOf("models/big.bin")).Length);
+        Assert.False(cleanup.CanUndoQuarantine);
+        Assert.Empty(store.ListSessions());
+    }
+
+    [Fact]
     public async Task Cleanup_dialog_reports_when_there_is_nothing_to_do()
     {
         _dir.WriteFile("cache/fresh.tmp", 10);

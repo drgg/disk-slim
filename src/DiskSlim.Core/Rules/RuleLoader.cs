@@ -93,13 +93,22 @@ public static class RuleLoader
             }
 
             var recycleBinPaths = rule.Paths.Count(PathExpander.IsRecycleBin);
+            var quarantinePaths = rule.Paths.Count(PathExpander.IsQuarantine);
             if (rule.Action == CleanupAction.EmptyRecycleBin && recycleBinPaths != rule.Paths.Count)
             {
                 problems.Add($"{label}：action 为 empty-recycle-bin 时，paths 只能是 {PathExpander.RecycleBinToken}");
             }
-            else if (recycleBinPaths > 0 && rule.Action is CleanupAction.Delete or CleanupAction.Recycle)
+            else if (rule.Action == CleanupAction.PurgeQuarantine && quarantinePaths != rule.Paths.Count)
+            {
+                problems.Add($"{label}：action 为 purge-quarantine 时，paths 只能是 {PathExpander.QuarantineToken}");
+            }
+            else if (recycleBinPaths > 0 && rule.Action is not (CleanupAction.None or CleanupAction.EmptyRecycleBin))
             {
                 problems.Add($"{label}：回收站只能用 empty-recycle-bin 清理");
+            }
+            else if (quarantinePaths > 0 && rule.Action is not (CleanupAction.None or CleanupAction.PurgeQuarantine))
+            {
+                problems.Add($"{label}：隔离区只能用 purge-quarantine 清理");
             }
         }
 

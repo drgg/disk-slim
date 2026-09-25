@@ -30,6 +30,7 @@ public sealed class CleanableIndex
             foreach (var match in result.Matches)
             {
                 // 回收站的结果没有真实路径（只有“回收站（C:\）”这样的名称），对应到磁盘上的 $Recycle.Bin。
+                // 隔离区的结果路径就是隔离区目录本身，是真实路径，走第一个分支。
                 var path = Path.IsPathFullyQualified(match.Path) ? match.Path
                     : result.Rule.Paths.Any(PathExpander.IsRecycleBin) ? recycleBinPath
                     : null;

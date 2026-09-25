@@ -11,7 +11,9 @@ public sealed record LogEntry
 {
     public required DateTimeOffset Time { get; init; }
 
-    /// <summary>run-start、rule-start、deleted、recycled、removed-dir、emptied-recycle-bin、failed、rule-end、run-end。</summary>
+    /// <summary>
+    /// run-start、rule-start、deleted、recycled、quarantined、removed-dir、emptied-recycle-bin、purged-quarantine、failed、rule-end、run-end。
+    /// </summary>
     public required string Event { get; init; }
 
     public string? Rule { get; init; }

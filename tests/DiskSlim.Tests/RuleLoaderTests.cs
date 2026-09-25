@@ -73,7 +73,18 @@ public sealed class RuleLoaderTests
         Assert.All(rules.Where(r => r.Risk == RiskLevel.High), r => Assert.Equal(CleanupAction.None, r.Action));
         Assert.Equal(CleanupAction.EmptyRecycleBin, rules.Single(r => r.Id == "recycle-bin").Action);
         Assert.Equal(CleanupAction.Recycle, rules.Single(r => r.Id == "downloads-installers").Action);
+        Assert.Equal(CleanupAction.PurgeQuarantine, rules.Single(r => r.Id == "quarantine-expired").Action);
         Assert.Contains(rules, r => r.Risk == RiskLevel.Low && r.Action == CleanupAction.Delete);
+    }
+
+    [Fact]
+    public void Default_rules_never_permanently_delete_items_that_need_confirmation()
+    {
+        // “需要确认”的内容要能撤销：移入隔离区或移到回收站，不直接永久删除。
+        var medium = RuleLoader.LoadDefault().Rules.Where(r => r.Risk == RiskLevel.Medium && r.Action != CleanupAction.None).ToList();
+
+        Assert.NotEmpty(medium);
+        Assert.All(medium, r => Assert.Contains(r.Action, new[] { CleanupAction.Quarantine, CleanupAction.Recycle, CleanupAction.EmptyRecycleBin }));
     }
 
     [Theory]
@@ -100,6 +111,9 @@ public sealed class RuleLoaderTests
     [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["x"], "risk": "high", "action": "delete" } ] }""", "不能设置 action")]
     [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["C:/x"], "risk": "medium", "action": "empty-recycle-bin" } ] }""", "只能是 ::RecycleBin")]
     [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["::RecycleBin"], "risk": "medium", "action": "delete" } ] }""", "回收站只能用 empty-recycle-bin")]
+    [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["C:/x"], "risk": "low", "action": "purge-quarantine" } ] }""", "只能是 ::Quarantine")]
+    [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["::Quarantine"], "risk": "low", "action": "quarantine" } ] }""", "隔离区只能用 purge-quarantine")]
+    [InlineData("""{ "rules": [ { "id": "a", "name": "A", "paths": ["::RecycleBin"], "risk": "low", "action": "quarantine" } ] }""", "回收站只能用 empty-recycle-bin")]
     public void Rejects_unsafe_actions(string json, string expectedMessage)
     {
         var ex = Assert.Throws<InvalidDataException>(() => LoadText(json));

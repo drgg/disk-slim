@@ -72,15 +72,31 @@ public sealed class CleanupResult
 
     public string? LogPath { get; init; }
 
-    /// <summary>永久删除的字节数（不含移到回收站的）。</summary>
-    public long DeletedBytes => Rules.Where(r => r.Rule.Action != CleanupAction.Recycle).Sum(r => r.Bytes);
+    /// <summary>这次移入隔离区的批次 id；没有移入任何文件时为 null。</summary>
+    public string? QuarantineSessionId { get; init; }
 
-    public long DeletedFiles => Rules.Where(r => r.Rule.Action != CleanupAction.Recycle).Sum(r => r.Files);
+    /// <summary>永久删除的字节数（不含移到回收站和移入隔离区的）。</summary>
+    public long DeletedBytes => Where(IsPermanent).Sum(r => r.Bytes);
+
+    public long DeletedFiles => Where(IsPermanent).Sum(r => r.Files);
 
     /// <summary>移到回收站的字节数：暂时还占着空间，清空回收站后才释放。</summary>
-    public long RecycledBytes => Rules.Where(r => r.Rule.Action == CleanupAction.Recycle).Sum(r => r.Bytes);
+    public long RecycledBytes => Where(CleanupAction.Recycle).Sum(r => r.Bytes);
 
-    public long RecycledFiles => Rules.Where(r => r.Rule.Action == CleanupAction.Recycle).Sum(r => r.Files);
+    public long RecycledFiles => Where(CleanupAction.Recycle).Sum(r => r.Files);
+
+    /// <summary>移入隔离区的字节数：可以撤销，彻底删除后才释放空间。</summary>
+    public long QuarantinedBytes => Where(CleanupAction.Quarantine).Sum(r => r.Bytes);
+
+    public long QuarantinedFiles => Where(CleanupAction.Quarantine).Sum(r => r.Files);
+
+    public long TotalFiles => Rules.Sum(r => r.Files);
+
+    private static bool IsPermanent(CleanupAction action) => action is not (CleanupAction.Recycle or CleanupAction.Quarantine);
+
+    private IEnumerable<RuleOutcome> Where(CleanupAction action) => Rules.Where(r => r.Rule.Action == action);
+
+    private IEnumerable<RuleOutcome> Where(Func<CleanupAction, bool> predicate) => Rules.Where(r => predicate(r.Rule.Action));
 }
 
 /// <summary>
@@ -95,9 +111,10 @@ public sealed class CleanupResult
 /// <item>没有只读或系统属性；</item>
 /// <item>比规则的 minAgeDays 更旧（按修改时间和创建时间中较晚的算）。</item>
 /// </list>
-/// 规则指定的目录本身永远保留；其中清空了的子目录会被删除（仅 delete 方式）。
+/// 规则指定的目录本身永远保留；其中清空了的子目录会被删除（delete 和 quarantine 方式）。
 /// </remarks>
-public sealed class CleanupExecutor(IFileOperations? operations = null, IOperationLog? log = null, TimeProvider? time = null)
+/// <param name="quarantine">隔离区；为 null 时使用计划所在磁盘的默认隔离区。</param>
+public sealed class CleanupExecutor(IFileOperations? operations = null, IOperationLog? log = null, TimeProvider? time = null, Quarantine.QuarantineStore? quarantine = null)
 {
     private const int MaxDepth = 256;
 
@@ -115,6 +132,8 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
     private volatile string _currentRule = "";
     private long _filesVisited;
     private long _bytesCleaned;
+    private Quarantine.QuarantineStore? _quarantineStore = quarantine;
+    private Quarantine.QuarantineWriter? _quarantineWriter;
 
     /// <summary>当前正在处理的规则名，可从其他线程读取以显示进度。</summary>
     public string CurrentRule => _currentRule;
@@ -125,6 +144,8 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
 
     public CleanupResult Execute(CleanupPlan plan, bool dryRun, CancellationToken cancellationToken = default)
     {
+        _quarantineStore ??= Quarantine.QuarantineStore.ForDrive(plan.DriveRoot);
+        _quarantineWriter = null;
         var freeBefore = FreeSpace(plan.DriveRoot);
         if (!dryRun)
         {
@@ -186,6 +207,7 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             FreeBytesAfter = freeAfter,
             Cancelled = cancelled,
             LogPath = dryRun ? null : _log.FilePath,
+            QuarantineSessionId = _quarantineWriter is { Count: > 0 } writer ? writer.Id : null,
         };
     }
 
@@ -198,9 +220,21 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             return;
         }
 
-        if (rule.Action is not (CleanupAction.Delete or CleanupAction.Recycle))
+        if (rule.Action == CleanupAction.PurgeQuarantine)
+        {
+            PurgeExpiredQuarantine(outcome, FileAge.Cutoff(rule.MinAgeDays, _time), dryRun, cancellationToken);
+            return;
+        }
+
+        if (rule.Action is not (CleanupAction.Delete or CleanupAction.Recycle or CleanupAction.Quarantine))
         {
             return;
+        }
+
+        if (rule.Action == CleanupAction.Quarantine && !dryRun)
+        {
+            _quarantineWriter ??= _quarantineStore!.BeginSession(
+                string.Join("、", plan.Rules.Where(r => r.Rule.Action == CleanupAction.Quarantine).Select(r => r.Rule.Name)), _time.GetLocalNow());
         }
 
         var context = new RuleContext(rule, outcome, FileAge.Cutoff(rule.MinAgeDays, _time), dryRun, cancellationToken);
@@ -252,6 +286,33 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
         Interlocked.Add(ref _bytesCleaned, bin.Bytes);
     }
 
+    private void PurgeExpiredQuarantine(RuleOutcome outcome, DateTimeOffset? cutoff, bool dryRun, CancellationToken cancellationToken)
+    {
+        foreach (var session in _quarantineStore!.ListSessions().Where(s => cutoff is not { } c || s.CreatedAt < c))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!dryRun)
+            {
+                try
+                {
+                    _quarantineStore.Purge(session);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    outcome.AddFailure(session.Directory, session.TotalBytes, Reason(ex));
+                    Log("failed", outcome.Rule.Id, session.Directory, session.TotalBytes, Reason(ex));
+                    continue;
+                }
+
+                Log("purged-quarantine", outcome.Rule.Id, session.Directory, session.TotalBytes, $"{session.Items.Count} 个文件，{session.CreatedAt:yyyy-MM-dd HH:mm} 移入");
+            }
+
+            outcome.Files += session.Items.Count;
+            outcome.Bytes += session.TotalBytes;
+            Interlocked.Add(ref _bytesCleaned, session.TotalBytes);
+        }
+    }
+
     /// <summary>处理目录中的内容，返回处理完后目录是否（将会）为空。</summary>
     private bool ProcessDirectory(string directory, int depth, RuleContext context)
     {
@@ -299,7 +360,7 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             }
 
             var childEmpty = ProcessDirectory(entry.FullName, depth + 1, context);
-            if (childEmpty && context.Rule.Action == CleanupAction.Delete && FileAge.IsOlderThan(entry, context.Cutoff)
+            if (childEmpty && context.Rule.Action is CleanupAction.Delete or CleanupAction.Quarantine && FileAge.IsOlderThan(entry, context.Cutoff)
                 && (context.DryRun || _ops.TryDeleteEmptyDirectory(entry.FullName)))
             {
                 context.Outcome.Directories++;
@@ -346,16 +407,20 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
         var length = file.Length;
         if (!context.DryRun)
         {
-            var recycle = context.Rule.Action == CleanupAction.Recycle;
+            var action = context.Rule.Action;
             try
             {
-                if (recycle)
+                switch (action)
                 {
-                    _ops.MoveToRecycleBin(file.FullName);
-                }
-                else
-                {
-                    _ops.DeleteFile(file.FullName);
+                    case CleanupAction.Recycle:
+                        _ops.MoveToRecycleBin(file.FullName);
+                        break;
+                    case CleanupAction.Quarantine:
+                        _quarantineWriter!.Move(file.FullName, length, context.Rule.Id);
+                        break;
+                    default:
+                        _ops.DeleteFile(file.FullName);
+                        break;
                 }
             }
             catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
@@ -371,7 +436,7 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
                 return false;
             }
 
-            Log(recycle ? "recycled" : "deleted", context.Rule.Id, file.FullName, length);
+            Log(action switch { CleanupAction.Recycle => "recycled", CleanupAction.Quarantine => "quarantined", _ => "deleted" }, context.Rule.Id, file.FullName, length);
         }
 
         outcome.Files++;

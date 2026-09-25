@@ -22,7 +22,7 @@ public sealed class RuleMatcher(string driveRoot)
         var targets = new List<MatchedTarget>();
         foreach (var pattern in rule.Paths)
         {
-            if (PathExpander.IsRecycleBin(pattern))
+            if (PathExpander.IsSpecial(pattern))
             {
                 continue;
             }

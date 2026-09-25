@@ -41,6 +41,8 @@ public static class DisplayText
         CleanupAction.Delete => "永久删除",
         CleanupAction.Recycle => "移到回收站",
         CleanupAction.EmptyRecycleBin => "清空回收站",
+        CleanupAction.Quarantine => "移入隔离区",
+        CleanupAction.PurgeQuarantine => "彻底删除",
         _ => "只提示，不自动清理",
     };
 
@@ -129,6 +131,8 @@ public static class DisplayText
         {
             CleanupAction.Recycle => $"已移到回收站 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
             CleanupAction.EmptyRecycleBin => $"已清空 {outcome.Files:N0} 项（{ByteSize.Format(outcome.Bytes)}）",
+            CleanupAction.Quarantine => $"已移入隔离区 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}），可以撤销",
+            CleanupAction.PurgeQuarantine => $"已彻底删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
             _ => $"已删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）"
                 + (outcome.Directories > 0 ? $"、{outcome.Directories:N0} 个空文件夹" : ""),
         };
@@ -150,12 +154,36 @@ public static class DisplayText
             parts.Add($"永久删除 {preview.DeletedFiles:N0} 项（{ByteSize.Format(preview.DeletedBytes)}）");
         }
 
+        if (preview.QuarantinedFiles > 0)
+        {
+            parts.Add($"把 {preview.QuarantinedFiles:N0} 个文件移入隔离区（{ByteSize.Format(preview.QuarantinedBytes)}）");
+        }
+
         if (preview.RecycledFiles > 0)
         {
             parts.Add($"把 {preview.RecycledFiles:N0} 个文件移到回收站（{ByteSize.Format(preview.RecycledBytes)}）");
         }
 
-        return "将要" + string.Join("，", parts) + "。永久删除的内容无法恢复。";
+        var warning = preview.DeletedFiles > 0 ? "永久删除的内容无法恢复。" : "";
+        var note = preview.QuarantinedFiles > 0 ? "隔离区中的文件可以随时恢复，彻底删除后才会释放空间。" : "";
+        return "将要" + string.Join("，", parts) + "。" + warning + note;
+    }
+
+    /// <summary>移到回收站、移入隔离区这类“暂时还占着空间”的内容的说明；没有时返回 null。</summary>
+    public static string? PendingSpaceNote(CleanupResult result)
+    {
+        var parts = new List<string>();
+        if (result.QuarantinedBytes > 0)
+        {
+            parts.Add($"{ByteSize.Format(result.QuarantinedBytes)} 移入了隔离区（可以恢复，彻底删除后才释放空间）");
+        }
+
+        if (result.RecycledBytes > 0)
+        {
+            parts.Add($"{ByteSize.Format(result.RecycledBytes)} 移到了回收站（清空回收站后才释放空间）");
+        }
+
+        return parts.Count == 0 ? null : "另有 " + string.Join("，", parts) + "。";
     }
 
     /// <summary>磁盘剩余空间的变化。</summary>

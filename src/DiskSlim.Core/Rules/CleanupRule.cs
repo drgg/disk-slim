@@ -32,6 +32,14 @@ public enum CleanupAction
 
     /// <summary>清空回收站，只能用于 <c>::RecycleBin</c>。</summary>
     EmptyRecycleBin,
+
+    /// <summary>
+    /// 把命中的文件移入隔离区（同一块盘上，瞬间完成），可以随时恢复；确认没问题后再彻底删除。适合“需要确认”的内容。
+    /// </summary>
+    Quarantine,
+
+    /// <summary>彻底删除隔离区中超过 minAgeDays 天的批次，只能用于 <c>::Quarantine</c>。</summary>
+    PurgeQuarantine,
 }
 
 /// <summary>用短横线小写名称读写枚举（例如 EmptyRecycleBin ↔ "empty-recycle-bin"），读取时不区分大小写。</summary>

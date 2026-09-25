@@ -96,9 +96,15 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         var freed = result.FreeBytesAfter - result.FreeBytesBefore;
         w.WriteLine();
         w.WriteLine("  " + DisplayText.FreeSpaceChange(result), freed > 0 ? ConsoleColor.Green : ConsoleColor.DarkGray);
-        if (result.RecycledBytes > 0)
+        if (DisplayText.PendingSpaceNote(result) is { } pending)
         {
-            w.WriteLine($"  另有 {ByteSize.Format(result.RecycledBytes)} 移到了回收站，清空回收站后才会释放空间。", ConsoleColor.DarkGray);
+            w.WriteLine("  " + pending, ConsoleColor.DarkGray);
+        }
+
+        if (result.QuarantineSessionId is { } sessionId)
+        {
+            w.WriteLine($"  撤销：diskslim quarantine restore {sessionId}", ConsoleColor.Cyan);
+            w.WriteLine($"  确认没问题后释放空间：diskslim quarantine purge {sessionId} --execute（超过 7 天的也会在下次 diskslim clean 时清理）", ConsoleColor.DarkGray);
         }
 
         if (result.LogPath is { } logPath)
@@ -164,11 +170,16 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
 
     private void RenderPlanTotals(CleanupResult preview)
     {
-        var total = preview.DeletedBytes + preview.RecycledBytes;
+        var total = preview.DeletedBytes + preview.RecycledBytes + preview.QuarantinedBytes;
         Section("合计", $"预计处理 {ByteSize.Format(total)}");
         if (preview.DeletedFiles > 0)
         {
             w.WriteLine($"  永久删除 {preview.DeletedFiles:N0} 项，释放 {ByteSize.Format(preview.DeletedBytes)}");
+        }
+
+        if (preview.QuarantinedFiles > 0)
+        {
+            w.WriteLine($"  移入隔离区 {preview.QuarantinedFiles:N0} 个文件（{ByteSize.Format(preview.QuarantinedBytes)}），可以随时恢复；彻底删除后才会释放空间");
         }
 
         if (preview.RecycledFiles > 0)
