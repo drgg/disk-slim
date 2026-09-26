@@ -96,6 +96,23 @@
       "risk": "low",
       "advice": "用“磁盘清理 → 缩略图”清理，删除后会自动重建。"
     },
+    {
+      "id": "shader-cache",
+      "name": "显卡着色器缓存",
+      "action": "delete",
+      "category": "系统",
+      "paths": [
+        "%LOCALAPPDATA%/D3DSCache",
+        "%LOCALAPPDATA%/NVIDIA/DXCache",
+        "%LOCALAPPDATA%/NVIDIA/GLCache",
+        "%LOCALAPPDATA%/AMD/DxCache",
+        "%LOCALAPPDATA%/AMD/DxcCache",
+        "%LOCALAPPDATA%/AMD/VkCache"
+      ],
+      "risk": "low",
+      "minAgeDays": 1,
+      "advice": "显卡驱动编译好的着色器。删除后游戏第一次启动或进入新场景时会稍慢，之后自动重建；正在运行的游戏占用的文件会被自动跳过。也可以用“磁盘清理 → DirectX 着色器缓存”。"
+    },
 
     // ───────────── 浏览器 ─────────────
     {
@@ -136,6 +153,40 @@
       "processes": ["firefox"],
       "advice": "Firefox 设置 → 隐私与安全 → Cookie 和网站数据 → 清除数据，只勾选“缓存的 Web 内容”。"
     },
+    {
+      "id": "360-browser-cache",
+      "name": "360 浏览器缓存",
+      "action": "delete",
+      "category": "浏览器",
+      "paths": [
+        "%LOCALAPPDATA%/360Chrome/Chrome/User Data/*/Cache",
+        "%LOCALAPPDATA%/360Chrome/Chrome/User Data/*/Code Cache",
+        "%LOCALAPPDATA%/360Chrome/Chrome/User Data/*/GPUCache",
+        "%LOCALAPPDATA%/360ChromeX/Chrome/User Data/*/Cache",
+        "%LOCALAPPDATA%/360ChromeX/Chrome/User Data/*/Code Cache",
+        "%LOCALAPPDATA%/360ChromeX/Chrome/User Data/*/GPUCache",
+        "%APPDATA%/360se6/User Data/*/Cache",
+        "%APPDATA%/360se6/User Data/*/Code Cache",
+        "%APPDATA%/360se6/User Data/*/GPUCache"
+      ],
+      "risk": "low",
+      "processes": ["360chrome", "360ChromeX", "360se"],
+      "advice": "360 极速浏览器和 360 安全浏览器的网页缓存。也可以在浏览器的“清除上网痕迹”里只勾选缓存，不会退出登录。"
+    },
+    {
+      "id": "qq-browser-cache",
+      "name": "QQ 浏览器缓存",
+      "action": "delete",
+      "category": "浏览器",
+      "paths": [
+        "%LOCALAPPDATA%/Tencent/QQBrowser/User Data/*/Cache",
+        "%LOCALAPPDATA%/Tencent/QQBrowser/User Data/*/Code Cache",
+        "%LOCALAPPDATA%/Tencent/QQBrowser/User Data/*/GPUCache"
+      ],
+      "risk": "low",
+      "processes": ["QQBrowser"],
+      "advice": "QQ 浏览器的网页缓存。也可以在浏览器的“清除浏览数据”里只勾选缓存，不会退出登录。"
+    },
 
     // ───────────── 常用软件 ─────────────
     {
@@ -143,7 +194,7 @@
       "name": "网易云音乐缓存",
       "action": "delete",
       "category": "应用",
-      "paths": ["%LOCALAPPDATA%/NetEase/CloudMusic/Cache"],
+      "paths": ["%LOCALAPPDATA%/NetEase/CloudMusic/Cache", "%LOCALAPPDATA%/NetEase/CloudMusic/webapp*/Cache"],
       "risk": "low",
       "processes": ["cloudmusic"],
       "advice": "在网易云音乐的设置（下载设置）里清除缓存，并可以限制缓存大小、把缓存目录改到其他盘。已下载的歌曲不受影响。"
@@ -163,6 +214,171 @@
       "processes": ["Code"],
       "advice": "关闭 VS Code 后删除这些目录。里面是扩展安装包、旧版本的编译缓存和日志，不影响设置和已装的扩展。"
     },
+
+    // ───────────── 国内常用软件 ─────────────
+    // 只清理软件自己的网页缓存、日志和更新安装包。聊天记录、收到的文件、小程序数据一律不碰，
+    // 它们归后面“聊天软件”一节的规则（仅供参考）。这些规则要放在宽泛的 electron-web-cache 前面。
+    {
+      "id": "wechat-web-cache",
+      "name": "微信内置浏览器缓存",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": ["%APPDATA%/Tencent/xwechat/radium/web/profiles/*/Cache"],
+      "risk": "low",
+      "processes": ["Weixin", "WeChat", "WeChatAppEx"],
+      "advice": "微信 4.0 里打开公众号文章、网页时的缓存，删除后会自动重建，不影响聊天记录和收到的文件。微信（包括后台的 WeChatAppEx）运行时跳过。"
+    },
+    {
+      "id": "wechat-logs",
+      "name": "微信日志",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": ["%APPDATA%/Tencent/xwechat/log", "%APPDATA%/Tencent/WeChat/log"],
+      "risk": "low",
+      "minAgeDays": 7,
+      "processes": ["Weixin", "WeChat", "WeChatAppEx"],
+      "advice": "微信的运行日志（.xlog），只用于排查问题。只清理 7 天前的。"
+    },
+    {
+      "id": "wechat-update",
+      "name": "微信更新安装包",
+      "action": "quarantine",
+      "category": "国内软件",
+      "paths": ["%APPDATA%/Tencent/xwechat/update"],
+      "risk": "medium",
+      "processes": ["Weixin", "WeChat", "WeChatAppEx"],
+      "advice": "微信自动下载的新版本安装包，可能还没有安装。删除后微信会在需要时重新下载。"
+    },
+    {
+      "id": "qq-cache",
+      "name": "QQ 缓存和日志",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": [
+        "%APPDATA%/QQ/Cache",
+        "%APPDATA%/QQ/Code Cache",
+        "%APPDATA%/QQ/GPUCache",
+        "%APPDATA%/QQ/log",
+        "%APPDATA%/QQ/Partitions/*/Cache",
+        "%APPDATA%/QQ/Partitions/*/Code Cache",
+        "%APPDATA%/QQ/Partitions/*/GPUCache"
+      ],
+      "risk": "low",
+      "minAgeDays": 3,
+      "processes": ["QQ"],
+      "advice": "新版 QQ（QQNT）界面的网页缓存和运行日志，不包含聊天记录（聊天记录在“文档\\Tencent Files”里）。只清理 3 天前的。"
+    },
+    {
+      "id": "wegame-cache",
+      "name": "WeGame 内置浏览器缓存",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": ["%APPDATA%/Tencent/WeGame/qbcore*/cache"],
+      "risk": "low",
+      "processes": ["wegame"],
+      "advice": "WeGame 里商店、社区页面的网页缓存，删除后会自动重建，不影响游戏和存档。"
+    },
+    {
+      "id": "androws-cache",
+      "name": "腾讯应用宝缓存",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": [
+        "%APPDATA%/Tencent/Androws/cef/*/Cache",
+        "%APPDATA%/Tencent/Androws/cef/*/Code Cache",
+        "%APPDATA%/Tencent/Androws/cef/*/GPUCache"
+      ],
+      "risk": "low",
+      "processes": ["AndrowsStore", "AndrowsAssistant"],
+      "advice": "腾讯应用宝（在电脑上运行安卓应用）里网页的缓存，删除后会自动重建，不影响已经安装的安卓应用。"
+    },
+    {
+      "id": "baidunetdisk-cache",
+      "name": "百度网盘缓存",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": ["%APPDATA%/baidunetdisk/Cache", "%APPDATA%/baidunetdisk/Code Cache", "%APPDATA%/baidunetdisk/GPUCache"],
+      "risk": "low",
+      "processes": ["BaiduNetdisk"],
+      "advice": "百度网盘客户端界面的网页缓存，删除后会自动重建，不影响已经下载的文件。"
+    },
+    {
+      "id": "quark-drive-cache",
+      "name": "夸克网盘缓存",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": [
+        "%LOCALAPPDATA%/QuarkCloudDrive/User Data/*/Cache",
+        "%LOCALAPPDATA%/QuarkCloudDrive/User Data/*/Code Cache",
+        "%LOCALAPPDATA%/QuarkCloudDrive/User Data/*/GPUCache",
+        "%LOCALAPPDATA%/QuarkCloudDrive/User Data/GrShaderCache"
+      ],
+      "risk": "low",
+      "processes": ["quark_cloud_drive"],
+      "advice": "夸克网盘客户端的网页缓存，删除后会自动重建，不影响已经下载的文件。"
+    },
+    {
+      "id": "coze-cache",
+      "name": "扣子（Coze）缓存和日志",
+      "action": "delete",
+      "category": "国内软件",
+      "paths": ["%APPDATA%/Coze/Cache", "%APPDATA%/Coze/Code Cache", "%APPDATA%/Coze/GPUCache", "%APPDATA%/Coze/logs"],
+      "risk": "low",
+      "minAgeDays": 3,
+      "processes": ["Coze"],
+      "advice": "扣子桌面版的网页缓存和运行日志，删除后会自动重建。只清理 3 天前的。"
+    },
+    {
+      "id": "netease-cloudmusic-update",
+      "name": "网易云音乐更新安装包",
+      "action": "quarantine",
+      "category": "国内软件",
+      "paths": ["%LOCALAPPDATA%/NetEase/CloudMusic/update"],
+      "risk": "medium",
+      "processes": ["cloudmusic"],
+      "advice": "网易云音乐自动下载的新版本安装包（orpheus_install.exe），可能还没有安装。删除后需要时会重新下载。"
+    },
+    {
+      "id": "jianying-drafts",
+      "name": "剪映草稿",
+      "category": "国内软件",
+      "paths": ["%LOCALAPPDATA%/JianyingPro/User Data/Projects"],
+      "risk": "high",
+      "processes": ["JianyingPro"],
+      "advice": "剪映的草稿（包括导入素材的副本），删除后草稿就没了。草稿太大时，可以在剪映的“全局设置 → 草稿位置”里改到其他盘。"
+    },
+    {
+      "id": "wps-cloud-files",
+      "name": "WPS 云文档和备份",
+      "category": "办公",
+      "paths": ["%USERPROFILE%/Documents/WPS Cloud Files", "%APPDATA%/kingsoft/office6/backup"],
+      "risk": "high",
+      "processes": ["wps", "et", "wpp"],
+      "advice": "WPS 云文档的本地副本和自动备份的文档，可能有还没同步的内容。请在 WPS 的“备份中心”和云文档设置里管理。"
+    },
+    {
+      "id": "mumu-shared-folder",
+      "name": "MuMu 模拟器共享文件夹",
+      "category": "用户文件",
+      "paths": ["%USERPROFILE%/Documents/MuMu共享文件夹"],
+      "risk": "high",
+      "advice": "模拟器里的安卓应用和电脑之间共享的文件（截图、导出的文件……），请手动整理。"
+    },
+    {
+      "id": "steam-htmlcache",
+      "name": "Steam 网页缓存",
+      "action": "delete",
+      "category": "游戏",
+      "paths": [
+        "%LOCALAPPDATA%/Steam/htmlcache/*/Cache",
+        "%LOCALAPPDATA%/Steam/htmlcache/*/Code Cache",
+        "%LOCALAPPDATA%/Steam/htmlcache/*/GPUCache"
+      ],
+      "risk": "low",
+      "processes": ["steam", "steamwebhelper"],
+      "advice": "Steam 商店和社区页面的缓存，删除后会自动重建，不影响游戏和存档。需要先完全退出 Steam（包括托盘图标）。"
+    },
+
     {
       "id": "electron-web-cache",
       "name": "桌面软件的网页缓存",
@@ -177,7 +393,16 @@
         "%APPDATA%/*/DawnWebGPUCache"
       ],
       "risk": "medium",
-      "advice": "VS Code、百度网盘、Figma 等基于网页技术（Electron）的软件的缓存，删除后会自动重建。涉及多个软件，工具无法逐一判断它们是否在运行，请先关闭这些软件再点名清理。"
+      "advice": "Figma、Claude 等基于网页技术（Electron）的软件的缓存，删除后会自动重建。涉及多个软件，工具无法逐一判断它们是否在运行，请先关闭这些软件再点名清理。"
+    },
+    {
+      "id": "electron-updater-cache",
+      "name": "桌面软件下载的更新安装包",
+      "action": "quarantine",
+      "category": "应用",
+      "paths": ["%LOCALAPPDATA%/*-updater"],
+      "risk": "medium",
+      "advice": "扣子（Coze）、荣耀超级工作台等 Electron 软件自动下载的新版本安装包（installer.exe 和 pending 文件夹）。软件更新完成后就没用了，删除后需要时会重新下载。涉及多个软件，请先关闭它们再点名清理。"
     },
     {
       "id": "jianying-cache",
@@ -374,6 +599,15 @@
       "risk": "high",
       "processes": ["DingTalk"],
       "advice": "包含聊天记录和缓存。请在钉钉的设置里清理缓存。"
+    },
+    {
+      "id": "feishu-data",
+      "name": "飞书数据",
+      "category": "聊天软件",
+      "paths": ["%APPDATA%/LarkShell"],
+      "risk": "high",
+      "processes": ["Feishu", "Lark"],
+      "advice": "包含聊天记录和缓存。请在飞书的设置里清理缓存或更改存储位置。"
     },
 
     // ───────────── 系统文件 ─────────────

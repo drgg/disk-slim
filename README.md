@@ -19,7 +19,7 @@ dotnet run --project src/DiskSlim.Desktop
 dotnet run --project src/DiskSlim.Cli
 ```
 
-或者发布成单个 exe（`DiskSlimApp.exe` 约 0.7 MB，`diskslim.exe` 约 1.6 MB），**两个要放在同一个文件夹**：
+或者发布成单个 exe（`DiskSlimApp.exe` 约 0.9 MB，`diskslim.exe` 约 1.7 MB），**两个要放在同一个文件夹**：
 
 ```bash
 dotnet publish src/DiskSlim.Desktop -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -o dist
@@ -33,7 +33,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 
 ## 图形界面
 
-打开后自动扫描系统盘（约 5～10 秒，只读取、不修改），然后有三个页面：
+打开后自动扫描系统盘（约 5～10 秒，只读取、不修改，并记下一份空间快照），然后有这些页面：
 
 - **可清理项目**：按“可放心清理 / 需要确认 / 仅供参考”分组。“可放心清理”默认勾选，“需要确认”要手动勾选，“仅供参考”不能勾选。相关程序正在运行的项目会标出来，底部的“预计释放”不会把它们算进去。
 - **空间分布**：方块图，面积代表大小；点击方块进入该文件夹，上方路径可以返回。
@@ -273,7 +273,20 @@ diskslim schedule disable
 
 ## 规则文件
 
-内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 43 条，其中 27 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
+内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 62 条，其中 42 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
+
+覆盖的内容：
+
+| 类别 | 规则 |
+|---|---|
+| 系统 | 临时文件、Windows 更新缓存、传递优化、错误报告、缩略图、显卡着色器缓存（DirectX、NVIDIA、AMD）、休眠文件、虚拟内存、Windows.old…… |
+| 浏览器 | Chrome、Edge、Firefox、360 浏览器、QQ 浏览器的缓存 |
+| 国内软件 | 微信（内置浏览器缓存、日志、更新包）、QQ、WeGame、腾讯应用宝、百度网盘、夸克网盘、网易云音乐（缓存、更新包）、剪映、扣子；聊天记录、剪映草稿、WPS 云文档、MuMu 共享文件夹只提示不清理 |
+| 应用和游戏 | VS Code、Steam 网页缓存、Electron 软件的网页缓存和下载的更新安装包 |
+| 开发工具 | npm、Yarn、pnpm、pip、uv、Conda、NuGet、Gradle、Maven、Go、Cargo、Playwright、Hugging Face |
+| 用户文件 | 回收站、下载的安装包、下载文件夹、桌面（后两项只提示） |
+
+软件缓存规则都带着进程名：软件在运行时整条跳过（例如微信后台的 WeChatAppEx 还开着时，不清理微信的缓存）。国内软件的目录会随版本变化，这些规则是按 2026 年 9 月的版本（微信 4.1、QQNT 等）在真实电脑上核对过的。
 
 ```jsonc
 {
@@ -335,6 +348,8 @@ dotnet test DiskSlim.slnx
 - 没有管理员权限时，部分系统目录读不到，相关数值偏小，也清理不了。
 - 模拟运行无法预知哪些文件正被占用，这部分要到真正执行时才知道。
 - 缩略图缓存、Windows.old、系统还原点目前只给建议（请用“磁盘清理”）。
+- 定时清理以普通权限运行：`C:\Windows\Temp` 这类需要管理员权限的目录只能清理一部分。
+- 空间快照只记录不小于 4 MB 的目录，一个目录“以前没有记录”时按 0 计算，误差不超过 4 MB。
 
 ## 路线图
 
@@ -342,4 +357,5 @@ dotnet test DiskSlim.slnx
 - ~~**v0.2**：模拟运行、真实清理、安全防线、操作日志~~
 - ~~**v0.3**：图形界面（方块图、分类勾选、风险颜色）~~
 - ~~**v0.4**：隔离区和撤销、重复文件查找、系统级清理（管理员助手进程）~~
-- **v0.5**：定时清理、空间增长追踪、扩充国内软件规则
+- ~~**v0.5**：定时清理、空间增长追踪、扩充国内软件规则~~
+- **之后可以考虑**：定时清理完成后的系统通知、剩余空间低于阈值时提醒、非系统盘的规则

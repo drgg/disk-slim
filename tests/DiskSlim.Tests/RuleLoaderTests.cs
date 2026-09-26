@@ -34,6 +34,35 @@ public sealed class RuleLoaderTests
         Assert.True(ids.IndexOf("vscode-cache") < ids.IndexOf("electron-web-cache"));
     }
 
+    [Theory]
+    [InlineData("wechat-web-cache", "tencent-appdata")]
+    [InlineData("wechat-logs", "tencent-appdata")]
+    [InlineData("wechat-update", "tencent-appdata")]
+    [InlineData("wegame-cache", "tencent-appdata")]
+    [InlineData("androws-cache", "tencent-appdata")]
+    [InlineData("qq-cache", "electron-web-cache")]
+    [InlineData("baidunetdisk-cache", "electron-web-cache")]
+    [InlineData("coze-cache", "electron-web-cache")]
+    public void App_specific_rules_come_before_the_broad_rules_that_contain_them(string specific, string broad)
+    {
+        // 同一个路径只归属第一条命中它的规则：具体的缓存规则排在后面就会被“仅供参考”或“需要确认”的宽泛规则吞掉。
+        var ids = RuleLoader.LoadDefault().Rules.Select(r => r.Id).ToList();
+
+        Assert.InRange(ids.IndexOf(specific), 0, ids.IndexOf(broad) - 1);
+    }
+
+    [Fact]
+    public void App_caches_cleaned_by_default_are_skipped_while_the_app_runs()
+    {
+        // “可放心清理”的软件缓存会被定时清理自动处理，必须能判断软件是否在运行。
+        var appRules = RuleLoader.LoadDefault().Rules
+            .Where(r => r.Risk == RiskLevel.Low && r.Action == CleanupAction.Delete && r.Category is "国内软件" or "浏览器" or "游戏" or "应用")
+            .ToList();
+
+        Assert.NotEmpty(appRules);
+        Assert.All(appRules, r => Assert.NotEmpty(r.Processes));
+    }
+
     [Fact]
     public void Optional_fields_get_defaults_and_comments_are_allowed()
     {

@@ -238,7 +238,7 @@ public sealed class MainViewModel : ObservableObject
 
             return (_history.History(snapshot.Drive), saveError);
         });
-        Growth.Show(snapshot, history, error);
+        Growth.Show(snapshot, history, error, saved: save && error is null);
     }
 
     /// <summary>把报告和扫描树展示到界面上。</summary>

@@ -98,10 +98,15 @@ public sealed class UsageChart : FrameworkElement
         var sameDay = first.Date == last.Date;
         var firstLabel = Text(sameDay ? first.ToString("HH:mm", CultureInfo.InvariantCulture) : first.ToString("M月d日", CultureInfo.InvariantCulture), 11, MutedBrush, Face, dpi);
         var lastLabel = Text(sameDay ? last.ToString("M月d日 HH:mm", CultureInfo.InvariantCulture) : last.ToString("M月d日", CultureInfo.InvariantCulture), 11, MutedBrush, Face, dpi);
-        dc.DrawText(firstLabel, new Point(plot.Left, plot.Bottom + 6));
         if (points.Count > 1)
         {
+            dc.DrawText(firstLabel, new Point(plot.Left, plot.Bottom + 6));
             dc.DrawText(lastLabel, new Point(plot.Right - lastLabel.Width, plot.Bottom + 6));
+        }
+        else
+        {
+            // 只有一个点时它画在正中间，日期也放在它下面。
+            dc.DrawText(lastLabel, new Point(plot.Left + (plot.Width - lastLabel.Width) / 2, plot.Bottom + 6));
         }
 
         if (_hovered is { } hovered)

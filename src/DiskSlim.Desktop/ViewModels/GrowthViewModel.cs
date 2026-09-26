@@ -124,7 +124,8 @@ public sealed class GrowthViewModel : ObservableObject
     /// 显示这次扫描和历史记录。<paramref name="history"/> 可以已经包含这次扫描（刚保存过），也可以不包含（没有保存）。
     /// </summary>
     /// <param name="saveError">保存快照失败的原因；为 null 表示保存成功或没有保存。</param>
-    public void Show(SpaceSnapshot current, IReadOnlyList<SnapshotSummary> history, string? saveError = null)
+    /// <param name="saved">这次扫描的快照是否已经保存（截图模式不保存）。</param>
+    public void Show(SpaceSnapshot current, IReadOnlyList<SnapshotSummary> history, string? saveError = null, bool saved = true)
     {
         _current = current;
         var points = history
@@ -149,7 +150,8 @@ public sealed class GrowthViewModel : ObservableObject
         OnPropertyChanged(nameof(BaselineTime));
 
         EmptyText = Baselines.Count == 0
-            ? "这是第一次扫描，已经记下了这次的空间快照。以后每次扫描都会记一份，那时这里会显示空间涨在哪里、减在哪里。"
+            ? (saved ? "这是第一次扫描，已经记下了这次的空间快照。" : "还没有更早的扫描记录。")
+              + "以后每次扫描都会记一份，那时这里会显示空间涨在哪里、减在哪里。"
             : "";
         if (saveError is not null)
         {
