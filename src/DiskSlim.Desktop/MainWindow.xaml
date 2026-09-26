@@ -571,6 +571,104 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
+
+            <!-- ───── 定时清理 ───── -->
+            <TabItem Header="定时清理" DataContext="{Binding Schedule}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,14">
+                    <StackPanel>
+                        <Border Style="{StaticResource Card}" Padding="16,14">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="定时清理" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <Border CornerRadius="4" Padding="8,2" Margin="12,0,0,0" VerticalAlignment="Center">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{StaticResource ChipBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                        <Setter Property="Background" Value="#E3F4E4" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding StatusText}" FontSize="12" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{Binding StatusDetail}" Foreground="{StaticResource SubtleTextBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding Problem}" Foreground="{StaticResource WarningBrush}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Visibility="{Binding HasProblem, Converter={StaticResource BoolToVisibility}}" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                    <ComboBox ItemsSource="{Binding Frequencies}" SelectedItem="{Binding SelectedFrequency}" DisplayMemberPath="Label" Width="80" Height="32" VerticalContentAlignment="Center" />
+                                    <ComboBox ItemsSource="{Binding Days}" SelectedItem="{Binding SelectedDay}" DisplayMemberPath="Label" Width="80" Height="32" VerticalContentAlignment="Center" Margin="8,0,0,0"
+                                              Visibility="{Binding IsWeekly, Converter={StaticResource BoolToVisibility}}" />
+                                    <ComboBox ItemsSource="{Binding Times}" SelectedItem="{Binding SelectedTime}" DisplayMemberPath="Label" Width="90" Height="32" VerticalContentAlignment="Center" Margin="8,0,0,0" />
+                                    <Button Content="{Binding EnableButtonText}" Style="{StaticResource PrimaryButton}" Command="{Binding EnableCommand}" Margin="12,0,0,0" />
+                                    <Button Content="关闭定时清理" Command="{Binding DisableCommand}" Margin="8,0,0,0"
+                                            Visibility="{Binding IsEnabled, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding Message}" Foreground="#2E7D32" Margin="0,8,0,0" TextWrapping="Wrap"
+                                           Visibility="{Binding HasMessage, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap"
+                                           Text="由 Windows 的“任务计划程序”按时启动，以你的身份（普通权限）在后台运行，不会弹出窗口。只在你登录时运行；关机或睡眠时错过的，会在下次开机后补上；使用电池时不运行；每次最长 1 小时。" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Padding="16,12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <TextBlock Text="{Binding AutomaticRulesTitle}" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,2,0,8" TextWrapping="Wrap"
+                                           Text="都是“可放心清理”的缓存和临时文件，和“可清理项目”页默认勾选的一样。相关程序正在运行时跳过；“需要确认”的项目（回收站、下载的安装包、NuGet 包目录……）永远不会被自动清理。每次都会写操作日志，并记下空间快照。" />
+                                <ItemsControl ItemsSource="{Binding AutomaticRules}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{StaticResource ChipBrush}" CornerRadius="4" Padding="8,3" Margin="0,0,6,6">
+                                                <TextBlock Text="{Binding}" FontSize="12" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource Card}" Padding="16,12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="现在运行一次…" Command="{Binding RunNowCommand}"
+                                            ToolTip="按定时清理的方式立即清理一次（会先让你确认）" />
+                                    <TextBlock Text="最近的运行" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <TextBlock Text="还没有运行过。" Foreground="{StaticResource SubtleTextBrush}" Margin="0,8,0,0"
+                                           Visibility="{Binding HasRuns, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                                <ItemsControl ItemsSource="{Binding Runs}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:ScheduledRunViewModel}">
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="130" />
+                                                    <ColumnDefinition Width="22" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding TimeText}" Foreground="{StaticResource SubtleTextBrush}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Mark}" FontWeight="SemiBold" />
+                                                <StackPanel Grid.Column="2">
+                                                    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding DetailText}" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
 
         <!-- 扫描中遮罩 -->

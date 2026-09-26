@@ -1,5 +1,6 @@
 using System.Globalization;
 using DiskSlim.Core.Platform;
+using DiskSlim.Core.Scheduling;
 
 namespace DiskSlim.Cli;
 
@@ -11,6 +12,15 @@ internal enum CliCommand
     Dupes,
     System,
     Growth,
+    Schedule,
+}
+
+internal enum ScheduleVerb
+{
+    Status,
+    Enable,
+    Disable,
+    Run,
 }
 
 internal enum QuarantineVerb
@@ -100,6 +110,16 @@ internal sealed record CliOptions
 
     /// <summary>列出所有扫描记录，而不是比较。</summary>
     public bool ListHistory { get; init; }
+
+    // ───── schedule ─────
+    public ScheduleVerb ScheduleVerb { get; init; } = ScheduleVerb.Status;
+
+    /// <summary>--daily / --weekly；为 null 时沿用现有设置（没有时每周）。</summary>
+    public ScheduleFrequency? Frequency { get; init; }
+
+    public DayOfWeek? Day { get; init; }
+
+    public TimeOnly? At { get; init; }
 }
 
 internal sealed record ParseResult(CliOptions? Options, string? Error);
@@ -123,6 +143,10 @@ internal static class CliParser
           diskslim system run <任务>              说明任务会做什么；加 --execute 执行（需要管理员权限，会弹出 UAC）
           diskslim growth                         空间变化：和 7 天前的扫描比较，找出空间涨在哪里
           diskslim growth list                    列出所有扫描记录和每次的磁盘用量
+          diskslim schedule                       查看定时清理的状态和最近的运行记录
+          diskslim schedule enable                开启定时清理（默认每周日 12:00，会先让你确认）
+          diskslim schedule disable               关闭定时清理
+          diskslim schedule run                   模拟一次定时清理；加 --execute 立即运行一次
 
         通用选项：
           -d, --drive <盘符>    要分析的磁盘，默认是系统盘
@@ -160,6 +184,13 @@ internal static class CliParser
               --min-size <大小>  只列出变化不小于这个大小的位置，默认 100MB
           -n, --top <数量>      每个列表显示多少条，默认 15
 
+        schedule enable 选项：
+              --weekly <星期>   每周哪一天：mon…sun、周一…周日或 1…7
+              --daily           每天运行
+              --at <时间>       几点运行，例如 --at 20:30，默认 12:00
+
+        定时清理只清理“可放心清理”的项目，相关程序正在运行时跳过；每次都写操作日志并记下空间快照。
+
         每次完整扫描（diskslim、图形界面）会在 %LOCALAPPDATA%\DiskSlim\history 记下一份约 100 KB 的空间快照，
         只包含目录大小，不包含文件内容。
 
@@ -189,9 +220,12 @@ internal static class CliParser
         ["--no-history"] = [CliCommand.Scan],
         ["--rule"] = [CliCommand.Clean],
         ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
-        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
-        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
-        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
+        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
+        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
+        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
+        ["--daily"] = [CliCommand.Schedule],
+        ["--weekly"] = [CliCommand.Schedule],
+        ["--at"] = [CliCommand.Schedule],
         ["--result-file"] = [CliCommand.System],
         ["--expired"] = [CliCommand.Quarantine],
         ["--all"] = [CliCommand.Quarantine],
@@ -204,7 +238,7 @@ internal static class CliParser
     {
         var options = new CliOptions();
         var start = 0;
-        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system" or "growth")
+        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system" or "growth" or "schedule")
         {
             options = options with
             {
@@ -215,6 +249,7 @@ internal static class CliParser
                     "dupes" => CliCommand.Dupes,
                     "system" => CliCommand.System,
                     "growth" => CliCommand.Growth,
+                    "schedule" => CliCommand.Schedule,
                     _ => CliCommand.Scan,
                 },
             };
@@ -240,7 +275,7 @@ internal static class CliParser
                 return Fail($"{arg} 只能用于 {string.Join(" 或 ", allowed.Select(c => "diskslim " + c.ToString().ToLowerInvariant()))}");
             }
 
-            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System or CliCommand.Growth && !arg.StartsWith('-') && arg != "/?")
+            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System or CliCommand.Growth or CliCommand.Schedule && !arg.StartsWith('-') && arg != "/?")
             {
                 positionals.Add(arg);
                 continue;
@@ -433,6 +468,33 @@ internal static class CliParser
                     options = options with { NoHistory = true };
                     break;
 
+                case "--daily":
+                    options = options with { Frequency = ScheduleFrequency.Daily };
+                    break;
+
+                case "--weekly":
+                {
+                    if (ParseDay(TakeValue()) is not { } day)
+                    {
+                        return Fail("--weekly 需要星期几，例如 --weekly sun、--weekly 周日 或 --weekly 7");
+                    }
+
+                    options = options with { Frequency = ScheduleFrequency.Weekly, Day = day };
+                    break;
+                }
+
+                case "--at":
+                {
+                    var value = TakeValue();
+                    if (!TimeOnly.TryParseExact(value ?? "", ["H:mm", "HH:mm"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var at))
+                    {
+                        return Fail("--at 需要一个时间，例如 --at 12:00 或 --at 20:30");
+                    }
+
+                    options = options with { At = at };
+                    break;
+                }
+
                 default:
                     return Fail($"未知选项：{args[i]}。运行 diskslim --help 查看用法。");
             }
@@ -443,7 +505,9 @@ internal static class CliParser
             return Fail("--rules-only 和 --map-only 不能同时使用");
         }
 
-        if (options.AssumeYes && !options.Execute)
+        // schedule enable 本身就是要确认的操作，--yes 可以单独使用。
+        var confirmsWithoutExecute = options.Command == CliCommand.Schedule && positionals is ["enable"];
+        if (options.AssumeYes && !options.Execute && !confirmsWithoutExecute)
         {
             return Fail("--yes 需要和 --execute 一起使用");
         }
@@ -509,6 +573,39 @@ internal static class CliParser
             }
         }
 
+        if (options.Command == CliCommand.Schedule)
+        {
+            var verb = positionals switch
+            {
+                [] or ["status"] => ScheduleVerb.Status,
+                ["enable"] => ScheduleVerb.Enable,
+                ["disable"] => ScheduleVerb.Disable,
+                ["run"] => ScheduleVerb.Run,
+                _ => (ScheduleVerb?)null,
+            };
+            if (verb is not { } scheduleVerb)
+            {
+                return Fail($"用法：diskslim schedule [enable | disable | run]，而不是 {string.Join(" ", positionals)}");
+            }
+
+            if (scheduleVerb != ScheduleVerb.Enable && (options.Frequency is not null || options.At is not null))
+            {
+                return Fail("--daily、--weekly 和 --at 只能用于 diskslim schedule enable");
+            }
+
+            if (options.Execute && scheduleVerb != ScheduleVerb.Run)
+            {
+                return Fail("--execute 只能用于 diskslim schedule run");
+            }
+
+            if (options.RulesFile is not null)
+            {
+                return Fail("定时清理总是使用内置规则，不能用 --rules 指定");
+            }
+
+            options = options with { ScheduleVerb = scheduleVerb };
+        }
+
         return new ParseResult(options with { RuleIds = ruleIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList() }, null);
     }
 
@@ -561,6 +658,34 @@ internal static class CliParser
     }
 
     private static string? NonBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>解析星期：mon…sun / monday…sunday、周一…周日 / 星期一…星期日（天）、1…7（7 是周日）。</summary>
+    internal static DayOfWeek? ParseDay(string? value)
+    {
+        var text = value?.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        if (int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+        {
+            return number is >= 1 and <= 7 ? (DayOfWeek)(number % 7) : null;
+        }
+
+        foreach (var day in Enum.GetValues<DayOfWeek>())
+        {
+            var english = day.ToString().ToLowerInvariant();
+            if (text == english || text == english[..3])
+            {
+                return day;
+            }
+        }
+
+        var chinese = text.StartsWith("星期", StringComparison.Ordinal) ? text[2..] : text.StartsWith('周') ? text[1..] : text;
+        var index = chinese is "天" ? 0 : chinese.Length == 1 ? "日一二三四五六".IndexOf(chinese[0]) : -1;
+        return index >= 0 ? (DayOfWeek)index : null;
+    }
 
     /// <summary>解析 "500KB"、"10MB"、"1.5GB"、"4096" 这样的大小（1024 进制）。</summary>
     internal static long? ParseSize(string? value)

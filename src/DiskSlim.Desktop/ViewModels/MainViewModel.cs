@@ -5,6 +5,7 @@ using DiskSlim.Core.History;
 using DiskSlim.Core.Platform;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
+using DiskSlim.Core.Scheduling;
 using DiskSlim.Core.Scanning;
 using DiskSlim.Core.Visualization;
 
@@ -32,11 +33,13 @@ public sealed class MainViewModel : ObservableObject
     private IReadOnlyList<string> _notes = [];
 
     /// <param name="history">空间快照的存放位置；为 null 时使用默认位置（测试时替换）。</param>
-    public MainViewModel(RuleSet rules, SnapshotStore? history = null)
+    /// <param name="schedule">定时清理的设置和任务注册；为 null 时使用默认位置（测试时替换）。</param>
+    public MainViewModel(RuleSet rules, SnapshotStore? history = null, ScheduleManager? schedule = null)
     {
         _rules = rules;
         _history = history ?? SnapshotStore.Default;
         Growth = new GrowthViewModel(_history);
+        Schedule = new ScheduleViewModel(rules, schedule);
         IsElevated = SystemInfo.IsElevated();
         Duplicates = new DuplicatesViewModel(rules);
         Duplicates.QuarantineChanged += (_, _) => Quarantine.Refresh();
@@ -77,6 +80,8 @@ public sealed class MainViewModel : ObservableObject
     public SystemTasksViewModel SystemTasks { get; } = new();
 
     public GrowthViewModel Growth { get; }
+
+    public ScheduleViewModel Schedule { get; }
 
     /// <summary>扫描后是否把空间快照保存下来（截图模式不保存）。</summary>
     public bool SaveHistory { get; set; } = true;
@@ -184,6 +189,7 @@ public sealed class MainViewModel : ObservableObject
 
             Quarantine.Load(drive.Root);
             _ = SystemTasks.RefreshEstimatesAsync();
+            _ = Schedule.RefreshAsync();
             StatusText = $"扫描完成，用时 {stopwatch.Elapsed.TotalSeconds:0.0} 秒。" + (IsElevated ? "" : "当前不是管理员权限，部分系统目录无法读取。");
         }
         catch (OperationCanceledException)

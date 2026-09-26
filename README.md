@@ -45,6 +45,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 - **系统清理**：DISM 组件存储、Windows 更新缓存、传递优化缓存、关闭休眠，点“运行”后弹出 UAC 提示（见下文）。
 - **隔离区**：查看、恢复或彻底删除之前移入隔离区的内容。
 - **空间变化**：已用空间的趋势图，以及和之前某次扫描相比，空间涨在哪里、减在哪里（见下文）。
+- **定时清理**：开启、修改、关闭定时清理，查看会自动清理哪些项目和最近的运行记录（见下文）。
 
 点“清理选中项…”后先弹出**模拟结果**：每一项会怎么处理、多少文件、为什么跳过。点“开始清理”才执行，可以随时“停止”。完成后显示磁盘剩余空间的变化和日志位置，并自动重新扫描。
 
@@ -56,7 +57,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-dialog dialog.png
 ```
 
-`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 系统清理（只估算，不运行），5 隔离区，6 空间变化（截图模式不保存快照）；`--size 1280x820` 设置窗口大小。
+`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 系统清理（只估算，不运行），5 隔离区，6 空间变化（截图模式不保存快照），7 定时清理（只读取状态）；`--size 1280x820` 设置窗口大小。
 
 ## 命令行：查看报告 `diskslim scan`
 
@@ -237,6 +238,35 @@ diskslim growth list
 - 以管理员身份扫描能读到更多系统目录，和普通权限的扫描比较时会提示。
 - 不想记录时加 --no-history；设置环境变量 DISKSLIM_HISTORY_DIR 可以把快照放到别的目录（用于测试和演示）。
 
+## 定时清理：`diskslim schedule`
+
+```bash
+diskslim schedule enable
+```
+
+```bash
+diskslim schedule enable --weekly sat --at 20:00
+```
+
+```bash
+diskslim schedule
+```
+
+```bash
+diskslim schedule disable
+```
+
+- **只清理“可放心清理”的项目**：和不带参数的 `diskslim clean` 完全一样（`diskslim schedule run` 可以先模拟看看）。相关程序正在运行的项目跳过；“需要确认”的项目（回收站、下载的安装包、NuGet 包目录……）永远不会被自动清理。隔离区中超过 7 天的批次属于“可放心清理”，也会被彻底删除。
+- **开启前要确认**：列出会自动清理的全部项目，输入 `y` 才开启（脚本里可以用 `--yes`）。图形界面的“定时清理”页面同样会先弹窗确认。
+- 由 Windows 的**任务计划程序**按时启动 `DiskSlimApp.exe --scheduled-run`：没有窗口，不会弹出黑框；以你的身份、**普通权限**运行，不需要保存密码。
+  - 只在你登录时运行；关机或睡眠时错过的，下次开机后补上。
+  - 使用电池时不运行；每次最长 1 小时；同一时间只运行一次。
+  - 任务名是 `DiskSlim Scheduled Cleanup-<你的 SID>`，同一台电脑上的其他用户互不影响。
+- 每次运行：清理并写操作日志（`logs\scheduled-时间.jsonl`），然后扫描一次、记下空间快照（供 `diskslim growth` 比较），最后在 `schedule\runs.jsonl` 追加一条运行记录。`diskslim schedule` 显示最近的记录。
+- **关闭是可靠的**：先删除设置文件（`schedule\settings.json`），再删除任务。定时运行时发现设置文件不在，就什么也不做，所以即使任务没能删掉，关闭后也不会再清理任何东西。
+- 程序文件夹搬了位置，`diskslim schedule` 会提示，在新位置重新开启即可。定时清理只用于系统盘，总是使用内置规则。
+- `diskslim schedule run --execute` 可以立即按定时清理的方式运行一次。
+
 ## 退出码
 
 `0` 成功（包括在确认提示里选择了取消），`1` 出错，`2` 参数错误或选择了不能清理的项目，`130` 被 Ctrl+C 取消。设置环境变量 `DISKSLIM_DEBUG=1` 可以看到完整的异常堆栈。
@@ -280,6 +310,7 @@ src/DiskSlim.Core/            扫描、规则和清理引擎（命令行和图�
   Quarantine/                 隔离区：移入、恢复、彻底删除
   Duplicates/                 重复文件查找和移除
   History/                    空间快照、保存和保留策略、增长分析
+  Scheduling/                 定时清理：设置、任务计划程序的任务定义、注册和运行记录、清理任务
   SystemTasks/                系统级清理任务、管理员助手进程
   Visualization/              方块图布局（Squarified Treemap）、可清理空间索引
   Presentation/               两个界面共用的显示文字
@@ -289,7 +320,7 @@ src/DiskSlim.Desktop/         图形界面（WPF）：视图模型、方块图�
 tests/DiskSlim.Tests/         xUnit 测试（含视图模型）
 ```
 
-写操作集中在 [Cleaning/FileOperations.cs](src/DiskSlim.Core/Cleaning/FileOperations.cs)（删除、回收站）和 [Quarantine/QuarantineStore.cs](src/DiskSlim.Core/Quarantine/QuarantineStore.cs)（隔离区的移入、恢复、彻底删除），便于审查。
+写操作集中在 [Cleaning/FileOperations.cs](src/DiskSlim.Core/Cleaning/FileOperations.cs)（删除、回收站）和 [Quarantine/QuarantineStore.cs](src/DiskSlim.Core/Quarantine/QuarantineStore.cs)（隔离区的移入、恢复、彻底删除），便于审查。改动系统设置的只有 [SystemTasks/SystemTaskRunner.cs](src/DiskSlim.Core/SystemTasks/SystemTaskRunner.cs)（系统级清理）和 [Scheduling/ScheduleManager.cs](src/DiskSlim.Core/Scheduling/ScheduleManager.cs)（注册、删除定时任务）。
 
 运行测试：
 

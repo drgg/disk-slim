@@ -13,6 +13,13 @@ public static class SystemInfo
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
     }
 
+    /// <summary>当前用户的 SID，例如 S-1-5-21-…-1001。</summary>
+    public static string CurrentUserSid()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User?.Value ?? throw new InvalidOperationException("无法获取当前用户的 SID。");
+    }
+
     /// <summary>当前运行中的进程名（不含 .exe，不区分大小写）。</summary>
     public static HashSet<string> RunningProcessNames()
     {

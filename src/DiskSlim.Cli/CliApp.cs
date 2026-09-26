@@ -2,6 +2,7 @@ using System.Diagnostics;
 using DiskSlim.Core.History;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
+using DiskSlim.Core.Scheduling;
 
 namespace DiskSlim.Cli;
 
@@ -15,6 +16,7 @@ internal sealed record CliContext(
     bool Interactive,
     int Width,
     SnapshotStore History,
+    ScheduleManager Schedule,
     CancellationToken CancellationToken);
 
 internal static class CliApp
@@ -26,7 +28,8 @@ internal static class CliApp
 
     /// <param name="interactive">能否向用户提问确认；为 null 时根据标准输入是否被重定向判断。</param>
     /// <param name="history">空间快照的存放位置；为 null 时使用默认位置（测试时替换）。</param>
-    public static int Run(string[] args, TextWriter stdout, TextWriter stderr, TextReader stdin, bool? interactive = null, SnapshotStore? history = null)
+    /// <param name="schedule">定时清理的设置和任务注册；为 null 时使用默认位置和真实的 schtasks（测试时替换）。</param>
+    public static int Run(string[] args, TextWriter stdout, TextWriter stderr, TextReader stdin, bool? interactive = null, SnapshotStore? history = null, ScheduleManager? schedule = null)
     {
         var parsed = CliParser.Parse(args);
         if (parsed.Error is { } error)
@@ -85,7 +88,7 @@ internal static class CliApp
         Console.CancelKeyPress += onCancel;
         try
         {
-            var context = new CliContext(options, rules, style, stderr, stdin, interactive ?? !Console.IsInputRedirected, width, history ?? SnapshotStore.Default, cts.Token);
+            var context = new CliContext(options, rules, style, stderr, stdin, interactive ?? !Console.IsInputRedirected, width, history ?? SnapshotStore.Default, schedule ?? new ScheduleManager(), cts.Token);
             return options.Command switch
             {
                 CliCommand.Clean => CleanCommand.Run(context),
@@ -93,6 +96,7 @@ internal static class CliApp
                 CliCommand.Dupes => DupesCommand.Run(context),
                 CliCommand.System => SystemCommand.Run(context),
                 CliCommand.Growth => GrowthCommand.Run(context),
+                CliCommand.Schedule => ScheduleCommand.Run(context),
                 _ => ScanCommand.Run(context),
             };
         }

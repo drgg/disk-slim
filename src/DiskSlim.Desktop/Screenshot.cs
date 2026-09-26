@@ -78,6 +78,12 @@ internal static class Screenshot
             // 系统清理页：等估算完成（只读，不会运行任何任务）。
             await window.ViewModel.SystemTasks.RefreshEstimatesAsync();
         }
+        else if (options.Tab == 7)
+        {
+            // 定时清理页：读取状态（只查询，不会开启或修改任务）。
+            await window.ViewModel.Schedule.RefreshAsync();
+        }
+
         if (options.NavigatePath is { } target && window.ViewModel.MapRoot?.FindDescendant(target) is { } node)
         {
             window.ViewModel.Navigate(node);

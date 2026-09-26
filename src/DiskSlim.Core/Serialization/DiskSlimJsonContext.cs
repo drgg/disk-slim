@@ -20,6 +20,8 @@ namespace DiskSlim.Core.Serialization;
 [JsonSerializable(typeof(SystemTasks.SystemTaskResult))]
 [JsonSerializable(typeof(History.SpaceSnapshot))]
 [JsonSerializable(typeof(History.SnapshotSummary))]
+[JsonSerializable(typeof(Scheduling.ScheduleSettings))]
+[JsonSerializable(typeof(Scheduling.ScheduledRunRecord))]
 internal sealed partial class DiskSlimJsonContext : JsonSerializerContext;
 
 public static class ReportJson
