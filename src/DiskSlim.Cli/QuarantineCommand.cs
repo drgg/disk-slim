@@ -111,7 +111,7 @@ internal static class QuarantineCommand
         }
         else
         {
-            var cutoff = DateTimeOffset.Now.AddDays(-options.ExpiryDays);
+            var cutoff = DateTimeOffset.Now.AddDays(-options.Days);
             selected = sessions.Where(s => s.CreatedAt < cutoff).ToList();
         }
 

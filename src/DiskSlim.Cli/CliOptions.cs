@@ -10,6 +10,7 @@ internal enum CliCommand
     Quarantine,
     Dupes,
     System,
+    Growth,
 }
 
 internal enum QuarantineVerb
@@ -48,6 +49,9 @@ internal sealed record CliOptions
 
     public bool ListRules { get; init; }
 
+    /// <summary>不记录这次扫描的空间快照。</summary>
+    public bool NoHistory { get; init; }
+
     // ───── clean ─────
 
     /// <summary>点名清理的规则；为空时清理所有“可放心清理”的项目。</summary>
@@ -70,15 +74,16 @@ internal sealed record CliOptions
 
     public bool PurgeAll { get; init; }
 
-    /// <summary>--expired 时多少天算到期。</summary>
-    public int ExpiryDays { get; init; } = 7;
+    /// <summary>quarantine --expired：多少天算到期；growth：和多少天前比较。两者默认都是 7。</summary>
+    public int Days { get; init; } = 7;
 
     // ───── dupes ─────
 
     /// <summary>在这些目录里查找重复文件；为空时查用户目录。</summary>
     public IReadOnlyList<string> DupesRoots { get; init; } = [];
 
-    public long MinFileSize { get; init; } = 1024 * 1024;
+    /// <summary>dupes：只查不小于这个大小的文件；growth：只列出变化不小于这个大小的位置。为 null 时用各命令的默认值。</summary>
+    public long? MinSize { get; init; }
 
     /// <summary>把建议移除的副本移入隔离区（配合 --execute）。</summary>
     public bool RemoveDuplicates { get; init; }
@@ -90,6 +95,11 @@ internal sealed record CliOptions
 
     /// <summary>助手模式：以管理员身份被调用，把结果写到这个文件（只能位于 DiskSlim 的助手目录中）。</summary>
     public string? ResultFile { get; init; }
+
+    // ───── growth ─────
+
+    /// <summary>列出所有扫描记录，而不是比较。</summary>
+    public bool ListHistory { get; init; }
 }
 
 internal sealed record ParseResult(CliOptions? Options, string? Error);
@@ -111,6 +121,8 @@ internal static class CliParser
           diskslim dupes [路径...] --remove       把建议移除的副本移入隔离区（默认只模拟，加 --execute 执行）
           diskslim system                         列出系统级清理任务（DISM、更新缓存、休眠文件……）
           diskslim system run <任务>              说明任务会做什么；加 --execute 执行（需要管理员权限，会弹出 UAC）
+          diskslim growth                         空间变化：和 7 天前的扫描比较，找出空间涨在哪里
+          diskslim growth list                    列出所有扫描记录和每次的磁盘用量
 
         通用选项：
           -d, --drive <盘符>    要分析的磁盘，默认是系统盘
@@ -127,6 +139,7 @@ internal static class CliParser
               --rules-only      只检查清理规则，跳过全盘空间分布（快很多）
               --map-only        只做全盘空间分布，跳过清理规则
               --list-rules      列出当前加载的规则后退出
+              --no-history      不记录这次扫描的空间快照（快照用于 diskslim growth）
 
         clean 选项：
               --rule <id>       点名要清理的项目，可重复或用逗号分隔。
@@ -141,6 +154,14 @@ internal static class CliParser
               --remove          移除建议的副本：每组保留最早创建的一份，其余移入隔离区；
                                 组里有聊天记录等受保护的文件时整组不动
           -n, --top <数量>      显示多少组，默认 15
+
+        growth 选项：
+              --days <天数>     和多少天前的扫描比较，默认 7；记录没有那么早时和最早的一次比较
+              --min-size <大小>  只列出变化不小于这个大小的位置，默认 100MB
+          -n, --top <数量>      每个列表显示多少条，默认 15
+
+        每次完整扫描（diskslim、图形界面）会在 %LOCALAPPDATA%\DiskSlim\history 记下一份约 100 KB 的空间快照，
+        只包含目录大小，不包含文件内容。
 
         “需要确认”的项目默认移入隔离区：可以随时恢复，彻底删除后才释放空间；
         超过 7 天的隔离内容会作为“可放心清理”的项目出现在 diskslim clean 里。
@@ -158,13 +179,14 @@ internal static class CliParser
     /// <summary>只能用于特定命令的选项；不在表里的选项所有命令都能用。</summary>
     private static readonly Dictionary<string, CliCommand[]> CommandSpecific = new(StringComparer.Ordinal)
     {
-        ["-n"] = [CliCommand.Scan, CliCommand.Dupes],
-        ["--top"] = [CliCommand.Scan, CliCommand.Dupes],
+        ["-n"] = [CliCommand.Scan, CliCommand.Dupes, CliCommand.Growth],
+        ["--top"] = [CliCommand.Scan, CliCommand.Dupes, CliCommand.Growth],
         ["--json"] = [CliCommand.Scan],
         ["--md"] = [CliCommand.Scan],
         ["--rules-only"] = [CliCommand.Scan],
         ["--map-only"] = [CliCommand.Scan],
         ["--list-rules"] = [CliCommand.Scan],
+        ["--no-history"] = [CliCommand.Scan],
         ["--rule"] = [CliCommand.Clean],
         ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
         ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
@@ -173,8 +195,8 @@ internal static class CliParser
         ["--result-file"] = [CliCommand.System],
         ["--expired"] = [CliCommand.Quarantine],
         ["--all"] = [CliCommand.Quarantine],
-        ["--days"] = [CliCommand.Quarantine],
-        ["--min-size"] = [CliCommand.Dupes],
+        ["--days"] = [CliCommand.Quarantine, CliCommand.Growth],
+        ["--min-size"] = [CliCommand.Dupes, CliCommand.Growth],
         ["--remove"] = [CliCommand.Dupes],
     };
 
@@ -182,7 +204,7 @@ internal static class CliParser
     {
         var options = new CliOptions();
         var start = 0;
-        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system")
+        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system" or "growth")
         {
             options = options with
             {
@@ -192,6 +214,7 @@ internal static class CliParser
                     "quarantine" => CliCommand.Quarantine,
                     "dupes" => CliCommand.Dupes,
                     "system" => CliCommand.System,
+                    "growth" => CliCommand.Growth,
                     _ => CliCommand.Scan,
                 },
             };
@@ -217,7 +240,7 @@ internal static class CliParser
                 return Fail($"{arg} 只能用于 {string.Join(" 或 ", allowed.Select(c => "diskslim " + c.ToString().ToLowerInvariant()))}");
             }
 
-            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System && !arg.StartsWith('-') && arg != "/?")
+            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System or CliCommand.Growth && !arg.StartsWith('-') && arg != "/?")
             {
                 positionals.Add(arg);
                 continue;
@@ -359,12 +382,12 @@ internal static class CliParser
                 case "--min-size":
                 {
                     var value = TakeValue();
-                    if (ParseSize(value) is not { } size)
+                    if (ParseSize(value) is not { } size || (options.Command == CliCommand.Growth && size == 0))
                     {
                         return Fail("--min-size 需要一个大小，例如 500KB、10MB、1GB");
                     }
 
-                    options = options with { MinFileSize = size };
+                    options = options with { MinSize = size };
                     break;
                 }
 
@@ -376,7 +399,7 @@ internal static class CliParser
                         return Fail("--days 需要 0 到 3650 之间的整数");
                     }
 
-                    options = options with { ExpiryDays = days };
+                    options = options with { Days = days };
                     break;
                 }
 
@@ -404,6 +427,10 @@ internal static class CliParser
 
                 case "--list-rules":
                     options = options with { ListRules = true };
+                    break;
+
+                case "--no-history":
+                    options = options with { NoHistory = true };
                     break;
 
                 default:
@@ -465,6 +492,20 @@ internal static class CliParser
             if (options.ResultFile is not null && !(options.Execute && options.AssumeYes && options.SystemTaskId is not null))
             {
                 return Fail("--result-file 只供图形界面调用管理员助手时使用");
+            }
+        }
+
+        if (options.Command == CliCommand.Growth)
+        {
+            switch (positionals)
+            {
+                case []:
+                    break;
+                case ["list"]:
+                    options = options with { ListHistory = true };
+                    break;
+                default:
+                    return Fail($"用法：diskslim growth [list]，而不是 {string.Join(" ", positionals)}");
             }
         }
 

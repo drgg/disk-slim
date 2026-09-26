@@ -10,6 +10,32 @@
         Foreground="{StaticResource TextBrush}"
         Background="{StaticResource WindowBackgroundBrush}">
 
+    <Window.Resources>
+        <!-- 空间变化页：一个变化明显的位置 -->
+        <DataTemplate x:Key="GrowthItemTemplate" DataType="{x:Type vm:GrowthItemViewModel}">
+            <Grid Margin="0,5" Background="Transparent" ToolTip="{Binding Path}">
+                <Grid.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="在空间分布中查看" Click="OnGrowthShowInMap" />
+                        <MenuItem Header="在资源管理器中显示" Click="OnGrowthShowInExplorer" />
+                    </ContextMenu>
+                </Grid.ContextMenu>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="88" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding DeltaText}" FontWeight="SemiBold" />
+                <StackPanel Grid.Column="1">
+                    <TextBlock TextTrimming="CharacterEllipsis">
+                        <Run Text="{Binding Name, Mode=OneWay}" FontWeight="SemiBold" />
+                        <Run Text="{Binding Location, Mode=OneWay}" Foreground="{StaticResource SubtleTextBrush}" />
+                    </TextBlock>
+                    <TextBlock Text="{Binding DetailText}" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Window.Resources>
+
     <Grid x:Name="Root" Background="{StaticResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -459,6 +485,91 @@
                         </Grid>
                     </Border>
                 </Grid>
+            </TabItem>
+
+            <!-- ───── 空间变化 ───── -->
+            <TabItem Header="空间变化" DataContext="{Binding Growth}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,14">
+                    <StackPanel>
+                        <Border Style="{StaticResource Card}" Padding="16,12,16,14">
+                            <StackPanel>
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                Visibility="{Binding HasBaselines, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="和" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="{StaticResource SubtleTextBrush}" />
+                                        <ComboBox ItemsSource="{Binding Baselines}" SelectedItem="{Binding SelectedBaseline}" DisplayMemberPath="Label"
+                                                  MinWidth="230" Height="30" VerticalContentAlignment="Center" ToolTip="选择和哪一次扫描比较；也可以点击趋势图上的点" />
+                                        <TextBlock Text="的扫描比较" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="{StaticResource SubtleTextBrush}" />
+                                    </StackPanel>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="已用空间" FontSize="14" FontWeight="SemiBold" />
+                                        <TextBlock Text="每次扫描记一个点。点击有明细的点，改为和那次扫描比较。" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <controls:UsageChart x:Name="UsageChart" Height="180" Margin="0,10,0,0"
+                                                     Points="{Binding Usage}" BaselineTime="{Binding BaselineTime}" />
+                                <TextBlock Text="{Binding Headline}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,12,0,0"
+                                           Visibility="{Binding HasComparison, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Text="{Binding Detail}" Foreground="{StaticResource SubtleTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,3,0,0"
+                                           Visibility="{Binding HasComparison, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Text="{Binding Caveat}" Foreground="{StaticResource WarningBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                           Visibility="{Binding HasCaveat, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Text="{Binding EmptyText}" Foreground="{StaticResource SubtleTextBrush}" TextWrapping="Wrap" Margin="0,12,0,0"
+                                           Visibility="{Binding HasNoComparison, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid Margin="0,12,0,0" Visibility="{Binding HasComparison, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource Card}" Padding="16,12">
+                                <StackPanel>
+                                    <TextBlock Text="增长最多的位置" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <TextBlock Text="没有明显增长的位置。" Foreground="{StaticResource SubtleTextBrush}" Margin="0,6,0,0"
+                                               Visibility="{Binding HasNoGrown, Converter={StaticResource BoolToVisibility}}" />
+                                    <ItemsControl ItemsSource="{Binding Grown}" ItemTemplate="{StaticResource GrowthItemTemplate}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Style="{StaticResource Card}" Padding="16,12">
+                                <StackPanel>
+                                    <TextBlock Text="减少最多的位置" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                    <TextBlock Text="没有明显减少的位置。" Foreground="{StaticResource SubtleTextBrush}" Margin="0,6,0,0"
+                                               Visibility="{Binding HasNoShrunk, Converter={StaticResource BoolToVisibility}}" />
+                                    <ItemsControl ItemsSource="{Binding Shrunk}" ItemTemplate="{StaticResource GrowthItemTemplate}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Style="{StaticResource Card}" Padding="16,12" Margin="0,12,0,0"
+                                Visibility="{Binding HasRuleChanges, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel>
+                                <TextBlock Text="清理项目的变化" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <ItemsControl ItemsSource="{Binding RuleChanges}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:RuleChangeViewModel}">
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="96" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DeltaText}" FontWeight="SemiBold" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Text="{Binding DetailText}" Foreground="{StaticResource SubtleTextBrush}" Margin="12,0,0,0" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Foreground="{StaticResource SubtleTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="2,12,0,0"
+                                   Text="每次扫描都会在 %LOCALAPPDATA%\DiskSlim\history 记下一份约 100 KB 的空间快照，只有目录大小，没有文件内容。最近 2 天的全部保留，90 天以内每天保留一份。各项变化互不重叠：一个文件夹里已经单独列出的子文件夹，不会再算进这个文件夹。" />
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
 

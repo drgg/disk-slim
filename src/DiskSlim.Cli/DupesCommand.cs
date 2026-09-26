@@ -9,10 +9,13 @@ namespace DiskSlim.Cli;
 /// <summary>diskslim dupes：查找重复文件；加 --remove 把建议的副本移入隔离区。</summary>
 internal static class DupesCommand
 {
+    private const long DefaultMinSize = 1L << 20;
+
     public static int Run(CliContext context)
     {
         var options = context.Options;
         var w = context.Style;
+        var minSize = options.MinSize ?? DefaultMinSize;
         var roots = options.DupesRoots.Count > 0
             ? options.DupesRoots
             : [Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)];
@@ -25,10 +28,10 @@ internal static class DupesCommand
 
         w.Write($"DiskSlim 硬盘瘦身 v{DiskReportBuilder.ToolVersion}", ConsoleColor.White);
         w.WriteLine("  ·  查找重复文件（只读取，不修改）", ConsoleColor.DarkGray);
-        w.WriteLine($"{string.Join("、", roots)} · 不小于 {ByteSize.Format(options.MinFileSize)} 的文件", ConsoleColor.DarkGray);
+        w.WriteLine($"{string.Join("、", roots)} · 不小于 {ByteSize.Format(minSize)} 的文件", ConsoleColor.DarkGray);
 
         var finder = new DuplicateFinder();
-        var searchOptions = DuplicateSearchOptions.ForCurrentUser(context.Rules, options.MinFileSize);
+        var searchOptions = DuplicateSearchOptions.ForCurrentUser(context.Rules, minSize);
         var guard = searchOptions.Guard!;
         w.WriteLine("不查软件数据（AppData、ProgramData）和开发工具目录（.git、node_modules……）", ConsoleColor.DarkGray);
 
@@ -224,9 +227,9 @@ internal static class DupesCommand
     {
         var parts = new List<string> { "diskslim dupes" };
         parts.AddRange(options.DupesRoots.Select(r => r.Contains(' ') ? $"\"{r}\"" : r));
-        if (options.MinFileSize != 1024 * 1024)
+        if (options.MinSize is { } minSize && minSize != DefaultMinSize)
         {
-            parts.Add($"--min-size {options.MinFileSize}");
+            parts.Add($"--min-size {minSize}");
         }
 
         parts.Add(extra);

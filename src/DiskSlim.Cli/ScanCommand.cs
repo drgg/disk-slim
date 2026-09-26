@@ -33,6 +33,11 @@ internal static class ScanCommand
         }
 
         new ConsoleReportRenderer(context.Style, context.Width, options.Verbose).Render(report);
+        if (!options.NoHistory && builder.MapResult is { } map)
+        {
+            GrowthCommand.RecordScan(context, report, map);
+        }
+
         return SaveReports(report, context);
     }
 

@@ -45,7 +45,7 @@ internal sealed record ScreenshotOptions(string Path, int Tab, int Width, int He
 
 /// <summary>
 /// 截图模式：在屏幕外打开窗口、扫描、渲染成 PNG 后退出。用于检查界面和生成文档配图。
-/// 清理对话框只做模拟运行，截图模式永远不会执行清理。
+/// 清理对话框只做模拟运行，截图模式永远不会执行清理，也不会保存空间快照。
 /// </summary>
 internal static class Screenshot
 {
@@ -64,6 +64,8 @@ internal static class Screenshot
         };
         window.Show();
 
+        // 截图不留下任何记录：空间变化页只读取已有的快照。
+        window.ViewModel.SaveHistory = false;
         await window.ViewModel.ScanAsync();
         window.SelectTab(options.Tab);
         if (options.Tab == 3)

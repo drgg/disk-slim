@@ -3,7 +3,7 @@
 磁盘空间分析和清理工具：告诉你空间被谁占了、哪些可以放心清理，并且安全地帮你清理。
 
 - **图形界面** `DiskSlimApp.exe`：勾选要清理的项目，用方块图浏览空间分布。
-- **命令行** `diskslim.exe`：`diskslim`（scan）**只读**；`diskslim clean` **默认只模拟**，加 `--execute` 并确认后才真正清理。
+- **命令行** `diskslim.exe`：`diskslim`（scan）**只读**（不修改你的文件，只在自己的数据目录里记下一份空间快照）；`diskslim clean` **默认只模拟**，加 `--execute` 并确认后才真正清理。
 
 两者共用同一套扫描、规则和清理引擎，每次清理都记录在操作日志里。
 
@@ -44,6 +44,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 - **重复文件**：选择位置和最小文件大小后查找，勾选的副本移入隔离区（见下文）。
 - **系统清理**：DISM 组件存储、Windows 更新缓存、传递优化缓存、关闭休眠，点“运行”后弹出 UAC 提示（见下文）。
 - **隔离区**：查看、恢复或彻底删除之前移入隔离区的内容。
+- **空间变化**：已用空间的趋势图，以及和之前某次扫描相比，空间涨在哪里、减在哪里（见下文）。
 
 点“清理选中项…”后先弹出**模拟结果**：每一项会怎么处理、多少文件、为什么跳过。点“开始清理”才执行，可以随时“停止”。完成后显示磁盘剩余空间的变化和日志位置，并自动重新扫描。
 
@@ -55,7 +56,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-dialog dialog.png
 ```
 
-`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 系统清理（只估算，不运行），5 隔离区；`--size 1280x820` 设置窗口大小。
+`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 系统清理（只估算，不运行），5 隔离区，6 空间变化（截图模式不保存快照）；`--size 1280x820` 设置窗口大小。
 
 ## 命令行：查看报告 `diskslim scan`
 
@@ -68,6 +69,7 @@ DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-di
 | `diskslim -v` | 显示每条规则命中的具体路径 |
 | `diskslim --json r.json --md r.md` | 同时保存 JSON 和 Markdown 报告 |
 | `diskslim --list-rules` | 列出所有规则和它们的清理方式 |
+| `diskslim --no-history` | 这次扫描不记录空间快照 |
 
 报告里能自动清理的项目会提示对应的 `diskslim clean` 命令。
 
@@ -206,6 +208,35 @@ diskslim system run hibernation-off --execute
 - 图形界面的“系统清理”页面也是通过这个助手执行的，所以发布时 `diskslim.exe` 要和 `DiskSlimApp.exe` 放在同一个文件夹。
 - DISM 这类系统维护程序**不支持中途取消**：强行结束可能留下不一致的状态。
 
+## 空间变化：diskslim growth
+
+C 盘空间“不知不觉就满了”时，要回答的是**涨在哪里**。每次完整扫描（diskslim、图形界面）会记下一份空间快照，之后拿两份快照比较：
+
+`ash
+diskslim growth
+`
+
+`ash
+diskslim growth --days 30
+`
+
+`ash
+diskslim growth list
+`
+
+- 默认和 **7 天前**的扫描比较（记录没有那么早时和最早的一次比较）；--days 0 表示和上一次扫描比较。--min-size 50MB 可以看更小的变化。
+- **变化集中在哪里就报在哪里**：某个缓存文件夹涨了 2 GB，只列出这个文件夹，不会把它的每一级上级目录都列一遍。一个文件夹里的增长分散在很多小文件夹时，报告这个文件夹本身。列出的各项**互不重叠**，相加不会重复计算。
+- 增长和减少分开计算，互不抵消：一个文件夹里视频多了 4 GB、临时文件少了 4 GB，两边都会列出来。
+- 同时列出**规则项目的变化**，比如“微信聊天记录和文件 +1.2 GB”。
+- 扫描完成后，报告末尾会有一句和 7 天前相比的总结。
+
+快照保存在 %LOCALAPPDATA%\DiskSlim\history\盘符\：
+
+- 只记录不小于 4 MB 的目录的大小和文件数（更小的计入上级目录），没有文件名以外的任何内容；系统盘一份约 100 KB（gzip 压缩的 JSON）。
+- 保留策略：最近 2 天的全部保留，90 天以内每天保留最后一份，更早的删除。index.jsonl 只追加，删掉明细后趋势图里仍有用量数字。
+- 以管理员身份扫描能读到更多系统目录，和普通权限的扫描比较时会提示。
+- 不想记录时加 --no-history；设置环境变量 DISKSLIM_HISTORY_DIR 可以把快照放到别的目录（用于测试和演示）。
+
 ## 退出码
 
 `0` 成功（包括在确认提示里选择了取消），`1` 出错，`2` 参数错误或选择了不能清理的项目，`130` 被 Ctrl+C 取消。设置环境变量 `DISKSLIM_DEBUG=1` 可以看到完整的异常堆栈。
@@ -248,6 +279,7 @@ src/DiskSlim.Core/            扫描、规则和清理引擎（命令行和图�
   Reporting/                  报告模型和报告生成
   Quarantine/                 隔离区：移入、恢复、彻底删除
   Duplicates/                 重复文件查找和移除
+  History/                    空间快照、保存和保留策略、增长分析
   SystemTasks/                系统级清理任务、管理员助手进程
   Visualization/              方块图布局（Squarified Treemap）、可清理空间索引
   Presentation/               两个界面共用的显示文字

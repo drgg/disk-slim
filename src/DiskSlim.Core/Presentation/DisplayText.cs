@@ -193,4 +193,49 @@ public static class DisplayText
         var change = freed >= 0 ? $"增加 {ByteSize.Format(freed)}" : $"减少 {ByteSize.Format(-freed)}，可能有其他程序同时在写入";
         return $"磁盘剩余空间：{ByteSize.Format(result.FreeBytesBefore)} → {ByteSize.Format(result.FreeBytesAfter)}（{change}）";
     }
+
+    // ───── 空间变化 ─────
+
+    /// <summary>带正负号的大小，例如 “+1.50 GB”“-300 MB”“0 B”。</summary>
+    public static string SignedSize(long bytes) => bytes switch
+    {
+        > 0 => "+" + ByteSize.Format(bytes),
+        < 0 => ByteSize.Format(bytes),
+        _ => "0 B",
+    };
+
+    /// <summary>快照里的目录大小；没有单独记录时显示为 “&lt; 门槛”。</summary>
+    public static string SnapshotSize(long? bytes, long threshold) => bytes is { } b ? ByteSize.Format(b) : "< " + ByteSize.Format(threshold);
+
+    /// <summary>一段时间的说法：“3 分钟”“5 小时”“7 天”。</summary>
+    public static string Duration(TimeSpan span) => span switch
+    {
+        { TotalMinutes: < 1 } => "不到 1 分钟",
+        { TotalHours: < 1 } => $"{(int)span.TotalMinutes} 分钟",
+        { TotalDays: < 1 } => $"{(int)span.TotalHours} 小时",
+        _ => $"{(int)Math.Round(span.TotalDays)} 天",
+    };
+
+    /// <summary>过去的某个时间，例如 “2026-09-18 10:03（7 天前）”。</summary>
+    public static string Since(DateTimeOffset time, DateTimeOffset now) =>
+        $"{time.ToLocalTime():yyyy-MM-dd HH:mm}（{(now - time < TimeSpan.FromMinutes(1) ? "刚才" : Duration(now - time) + "前")}）";
+
+    /// <summary>某个位置变化的一行说明，例如 “120 MB → 1.62 GB”，或 “其他内容（整个文件夹 +2.00 GB）”。</summary>
+    public static string GrowthDetail(History.GrowthItem item, long threshold) => item.IsRemainder
+        ? $"除上面列出的子文件夹以外的变化（整个文件夹 {SignedSize(item.FolderDelta)}）"
+        : $"{SnapshotSize(item.OldBytes, threshold)} → {SnapshotSize(item.NewBytes, threshold)}";
+
+    /// <summary>空间变化的总览，例如 “9月18日 → 9月25日（7 天）：已用空间 +3.20 GB”。</summary>
+    public static string GrowthHeadline(History.GrowthReport report)
+    {
+        var from = report.From.Time.ToLocalTime();
+        var to = report.To.Time.ToLocalTime();
+        return $"{from:yyyy-MM-dd HH:mm} → {to:yyyy-MM-dd HH:mm}（{Duration(report.Span)}）：已用空间 {SignedSize(report.UsedDelta)}"
+            + $"（剩余 {ByteSize.Format(report.From.FreeBytes)} → {ByteSize.Format(report.To.FreeBytes)}）";
+    }
+
+    /// <summary>比较结果需要留意的地方；没有时返回 null。</summary>
+    public static string? GrowthCaveat(History.GrowthReport report) => report.ElevationDiffers
+        ? "两次扫描的权限不同（其中一次以管理员身份运行），系统目录的变化可能只是能否读取的区别。"
+        : null;
 }

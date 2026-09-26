@@ -109,7 +109,7 @@ public sealed class CliParserTests
         var options = CliParser.Parse(["quarantine", "purge", "--expired", "--days", "14"]).Options!;
 
         Assert.True(options.PurgeExpired);
-        Assert.Equal(14, options.ExpiryDays);
+        Assert.Equal(14, options.Days);
         Assert.False(options.Execute);
     }
 
@@ -138,7 +138,7 @@ public sealed class CliParserTests
         Assert.Equal("component-store", run.SystemTaskId);
         Assert.True(run.Execute);
         Assert.Equal([@"D:\照片", "E:\\"], dupes.DupesRoots);
-        Assert.Equal(10L << 20, dupes.MinFileSize);
+        Assert.Equal(10L << 20, dupes.MinSize);
         Assert.True(dupes.RemoveDuplicates);
     }
 

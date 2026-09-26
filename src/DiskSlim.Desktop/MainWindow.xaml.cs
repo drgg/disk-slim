@@ -43,6 +43,7 @@ public partial class MainWindow : Window
             }
         };
         Treemap.HoveredTileChanged += (_, e) => viewModel.DescribeTile(e.Tile);
+        UsageChart.PointClicked += (_, e) => viewModel.Growth.SelectBaselineAt(e.Point.Time);
     }
 
     public MainViewModel ViewModel { get; }
@@ -68,7 +69,7 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 系统清理，5 = 隔离区）。</summary>
+    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 系统清理，5 = 隔离区，6 = 空间变化）。</summary>
     public void SelectTab(int index) => Tabs.SelectedIndex = index;
 
     private async void OnCleanupRequested(object? sender, CleanupViewModel cleanup)
@@ -128,6 +129,31 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { DataContext: DuplicateFileViewModel file })
         {
             ShowInExplorer(file.Path);
+        }
+    }
+
+    private void OnGrowthShowInExplorer(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: GrowthItemViewModel item })
+        {
+            ShowInExplorer(item.Path);
+        }
+    }
+
+    private void OnGrowthShowInMap(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: GrowthItemViewModel item })
+        {
+            // 快照里的文件夹可能已经被删除（减少的位置），这时退到还存在的最近一级。
+            for (var path = item.Path; !string.IsNullOrEmpty(path); path = Path.GetDirectoryName(path))
+            {
+                if (ViewModel.MapRoot?.FindDescendant(path) is { } node)
+                {
+                    ViewModel.Navigate(node);
+                    SelectTab(1);
+                    return;
+                }
+            }
         }
     }
 

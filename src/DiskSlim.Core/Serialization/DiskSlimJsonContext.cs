@@ -18,6 +18,8 @@ namespace DiskSlim.Core.Serialization;
 [JsonSerializable(typeof(Quarantine.QuarantineRecord))]
 [JsonSerializable(typeof(Quarantine.QuarantineSessionInfo))]
 [JsonSerializable(typeof(SystemTasks.SystemTaskResult))]
+[JsonSerializable(typeof(History.SpaceSnapshot))]
+[JsonSerializable(typeof(History.SnapshotSummary))]
 internal sealed partial class DiskSlimJsonContext : JsonSerializerContext;
 
 public static class ReportJson

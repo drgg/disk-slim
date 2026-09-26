@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DiskSlim.Core.History;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
 
@@ -13,6 +14,7 @@ internal sealed record CliContext(
     TextReader Stdin,
     bool Interactive,
     int Width,
+    SnapshotStore History,
     CancellationToken CancellationToken);
 
 internal static class CliApp
@@ -23,7 +25,8 @@ internal static class CliApp
     public const int ExitCancelled = 130;
 
     /// <param name="interactive">能否向用户提问确认；为 null 时根据标准输入是否被重定向判断。</param>
-    public static int Run(string[] args, TextWriter stdout, TextWriter stderr, TextReader stdin, bool? interactive = null)
+    /// <param name="history">空间快照的存放位置；为 null 时使用默认位置（测试时替换）。</param>
+    public static int Run(string[] args, TextWriter stdout, TextWriter stderr, TextReader stdin, bool? interactive = null, SnapshotStore? history = null)
     {
         var parsed = CliParser.Parse(args);
         if (parsed.Error is { } error)
@@ -82,13 +85,14 @@ internal static class CliApp
         Console.CancelKeyPress += onCancel;
         try
         {
-            var context = new CliContext(options, rules, style, stderr, stdin, interactive ?? !Console.IsInputRedirected, width, cts.Token);
+            var context = new CliContext(options, rules, style, stderr, stdin, interactive ?? !Console.IsInputRedirected, width, history ?? SnapshotStore.Default, cts.Token);
             return options.Command switch
             {
                 CliCommand.Clean => CleanCommand.Run(context),
                 CliCommand.Quarantine => QuarantineCommand.Run(context),
                 CliCommand.Dupes => DupesCommand.Run(context),
                 CliCommand.System => SystemCommand.Run(context),
+                CliCommand.Growth => GrowthCommand.Run(context),
                 _ => ScanCommand.Run(context),
             };
         }

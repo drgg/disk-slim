@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using DiskSlim.Core.Formatting;
+using DiskSlim.Core.History;
 using DiskSlim.Core.Platform;
 using DiskSlim.Core.Reporting;
 using DiskSlim.Core.Rules;
@@ -12,6 +13,7 @@ namespace DiskSlim.Desktop.ViewModels;
 public sealed class MainViewModel : ObservableObject
 {
     private readonly RuleSet _rules;
+    private readonly SnapshotStore _history;
     private CancellationTokenSource? _scanCts;
     private DriveOption? _selectedDrive;
     private bool _isScanning;
@@ -29,9 +31,12 @@ public sealed class MainViewModel : ObservableObject
     private string _selectionText = "";
     private IReadOnlyList<string> _notes = [];
 
-    public MainViewModel(RuleSet rules)
+    /// <param name="history">空间快照的存放位置；为 null 时使用默认位置（测试时替换）。</param>
+    public MainViewModel(RuleSet rules, SnapshotStore? history = null)
     {
         _rules = rules;
+        _history = history ?? SnapshotStore.Default;
+        Growth = new GrowthViewModel(_history);
         IsElevated = SystemInfo.IsElevated();
         Duplicates = new DuplicatesViewModel(rules);
         Duplicates.QuarantineChanged += (_, _) => Quarantine.Refresh();
@@ -70,6 +75,11 @@ public sealed class MainViewModel : ObservableObject
     public DuplicatesViewModel Duplicates { get; }
 
     public SystemTasksViewModel SystemTasks { get; } = new();
+
+    public GrowthViewModel Growth { get; }
+
+    /// <summary>扫描后是否把空间快照保存下来（截图模式不保存）。</summary>
+    public bool SaveHistory { get; set; } = true;
 
     public AsyncRelayCommand ScanCommand { get; }
 
@@ -167,6 +177,11 @@ public sealed class MainViewModel : ObservableObject
 
             var report = await task;
             Apply(report, builder.MapResult);
+            if (builder.MapResult is { } map)
+            {
+                await RecordHistoryAsync(report, map);
+            }
+
             Quarantine.Load(drive.Root);
             _ = SystemTasks.RefreshEstimatesAsync();
             StatusText = $"扫描完成，用时 {stopwatch.Elapsed.TotalSeconds:0.0} 秒。" + (IsElevated ? "" : "当前不是管理员权限，部分系统目录无法读取。");
@@ -184,6 +199,40 @@ public sealed class MainViewModel : ObservableObject
             _scanCts = null;
             IsScanning = false;
         }
+    }
+
+    /// <summary>记下这次扫描的空间快照（保存失败不影响扫描结果），并更新“空间变化”页面。</summary>
+    internal async Task RecordHistoryAsync(ScanReport report, ScanResult map)
+    {
+        SpaceSnapshot snapshot;
+        try
+        {
+            snapshot = SpaceSnapshot.Create(report, map);
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        var save = SaveHistory;
+        var (history, error) = await Task.Run(() =>
+        {
+            string? saveError = null;
+            if (save)
+            {
+                try
+                {
+                    _history.Save(snapshot);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    saveError = ex.Message;
+                }
+            }
+
+            return (_history.History(snapshot.Drive), saveError);
+        });
+        Growth.Show(snapshot, history, error);
     }
 
     /// <summary>把报告和扫描树展示到界面上。</summary>
