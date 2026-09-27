@@ -113,6 +113,32 @@
       "minAgeDays": 1,
       "advice": "显卡驱动编译好的着色器。删除后游戏第一次启动或进入新场景时会稍慢，之后自动重建；正在运行的游戏占用的文件会被自动跳过。也可以用“磁盘清理 → DirectX 着色器缓存”。"
     },
+    {
+      "id": "squirrel-temp",
+      "name": "软件安装程序的临时文件",
+      "action": "delete",
+      "category": "系统",
+      "paths": ["%LOCALAPPDATA%/SquirrelTemp"],
+      "risk": "low",
+      "minAgeDays": 1,
+      "advice": "Discord、Teams 等软件的安装程序（Squirrel）解压用的临时文件夹，装完就用不到了。只清理 1 天前的，正在安装的软件不受影响。"
+    },
+    {
+      "id": "nvidia-driver-installers",
+      "name": "NVIDIA 驱动安装包",
+      "action": "quarantine",
+      "category": "系统",
+      "paths": [
+        "%ProgramData%/NVIDIA Corporation/Downloader/????????????????????????????????",
+        "%ProgramData%/NVIDIA Corporation/Downloader/latest",
+        "%ProgramData%/NVIDIA Corporation/NVIDIA app/UpdateFramework/ota-artifacts/grd",
+        "%ProgramData%/NVIDIA Corporation/NVIDIA app/UpdateFramework/ota-artifacts/crd"
+      ],
+      "risk": "medium",
+      "minAgeDays": 3,
+      "processes": ["NVIDIA app", "NVIDIA GeForce Experience"],
+      "advice": "NVIDIA App / GeForce Experience 下载的显卡驱动安装包和解压出来的文件，每更新一次驱动就多攒一份（每份 1～4 GB）。驱动装好后就用不到了，删除不影响已经安装的驱动；以后要重装驱动时 NVIDIA App 会重新下载。只处理 3 天前的，正在下载的驱动不受影响。"
+    },
 
     // ───────────── 浏览器 ─────────────
     {
@@ -187,6 +213,18 @@
       "processes": ["QQBrowser"],
       "advice": "QQ 浏览器的网页缓存。也可以在浏览器的“清除浏览数据”里只勾选缓存，不会退出登录。"
     },
+    {
+      "id": "google-updater-cache",
+      "name": "Google 更新程序缓存的安装包",
+      "category": "浏览器",
+      "paths": [
+        "%ProgramFiles(x86)%/Google/GoogleUpdater/crx_cache",
+        "%ProgramFiles%/Google/GoogleUpdater/crx_cache",
+        "%LOCALAPPDATA%/Google/GoogleUpdater/crx_cache"
+      ],
+      "risk": "medium",
+      "advice": "Google 更新程序下载的 Chrome 安装包，Chrome 升级后一般会被新版本替换。它在 Program Files 里，工具不会清理；需要时可以以管理员身份手动删除 crx_cache 里的文件，Chrome 下次更新时会重新下载。"
+    },
 
     // ───────────── 常用软件 ─────────────
     {
@@ -213,6 +251,34 @@
       "risk": "low",
       "processes": ["Code"],
       "advice": "关闭 VS Code 后删除这些目录。里面是扩展安装包、旧版本的编译缓存和日志，不影响设置和已装的扩展。"
+    },
+    {
+      "id": "adobe-media-cache",
+      "name": "Adobe 媒体缓存",
+      "action": "delete",
+      "category": "应用",
+      "paths": [
+        "%APPDATA%/Adobe/Common/Media Cache Files",
+        "%APPDATA%/Adobe/Common/Media Cache",
+        "%APPDATA%/Adobe/Common/Peak Files"
+      ],
+      "risk": "low",
+      "minAgeDays": 7,
+      "processes": ["Adobe Premiere Pro", "AfterFX", "Adobe Media Encoder", "Adobe Audition"],
+      "advice": "Premiere Pro、After Effects、Media Encoder 为导入的素材生成的音频和预览缓存（.cfa、.pek），删除后打开工程时会自动重新生成。只清理 7 天前的。也可以在 Premiere 的 首选项 → 媒体缓存 里清理，或把缓存位置改到其他盘。"
+    },
+    {
+      "id": "reasonlabs-data",
+      "name": "RAV / ReasonLabs 安全软件的数据",
+      "category": "应用",
+      "paths": [
+        "%ProgramData%/ReasonSaferWebService",
+        "%ProgramData%/ReasonLabs",
+        "%APPDATA%/ReasonLabs",
+        "%LOCALAPPDATA%/ReasonLabs"
+      ],
+      "risk": "medium",
+      "advice": "RAV Endpoint Protection、Safer Web 等 ReasonLabs 软件的数据和日志，其中 Errors.dat 可能涨到好几 GB。这类软件常被其他软件的安装程序捆绑装上：如果不是你主动安装的，可以在 设置 → 应用 里卸载，这些文件会一起删除。还在用的话不要手动删除。"
     },
 
     // ───────────── 国内常用软件 ─────────────

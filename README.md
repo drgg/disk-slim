@@ -99,7 +99,7 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 “移入隔离区”和“移到回收站”都还占着空间。剩余空间少于容量的 10%（大硬盘最多按 20 GB 算）时，模拟结果会单独提醒这一点。等不了 7 天时，可以加 `--purge-now`：这次移入隔离区的内容在清理后立即彻底删除，马上释放空间，但**不能再撤销**。`dupes --remove` 也可以用。
 
 ```bash
-diskslim clean --rule electron-updater-cache,playwright-browsers --purge-now --execute
+diskslim clean --rule nvidia-driver-installers,electron-updater-cache --purge-now --execute
 ```
 
 ### 选哪些项目
@@ -288,16 +288,16 @@ diskslim schedule disable
 
 ## 规则文件
 
-内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 62 条，其中 42 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
+内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 67 条，其中 45 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
 
 覆盖的内容：
 
 | 类别 | 规则 |
 |---|---|
-| 系统 | 临时文件、Windows 更新缓存、传递优化、错误报告、缩略图、显卡着色器缓存（DirectX、NVIDIA、AMD）、休眠文件、虚拟内存、Windows.old…… |
-| 浏览器 | Chrome、Edge、Firefox、360 浏览器、QQ 浏览器的缓存 |
+| 系统 | 临时文件、Windows 更新缓存、传递优化、错误报告、缩略图、显卡着色器缓存（DirectX、NVIDIA、AMD）、NVIDIA 驱动安装包、软件安装程序的临时文件（SquirrelTemp）、休眠文件、虚拟内存、Windows.old…… |
+| 浏览器 | Chrome、Edge、Firefox、360 浏览器、QQ 浏览器的缓存；Google 更新程序缓存的安装包（只提示） |
 | 国内软件 | 微信（内置浏览器缓存、日志、更新包）、QQ、WeGame、腾讯应用宝、百度网盘、夸克网盘、网易云音乐（缓存、更新包）、剪映、扣子；聊天记录、剪映草稿、WPS 云文档、MuMu 共享文件夹只提示不清理 |
-| 应用和游戏 | VS Code、Steam 网页缓存、Electron 软件的网页缓存和下载的更新安装包 |
+| 应用和游戏 | VS Code、Adobe 媒体缓存、Steam 网页缓存、Electron 软件的网页缓存和下载的更新安装包；RAV / ReasonLabs 的数据只提示 |
 | 开发工具 | npm、Yarn、pnpm、pip、uv、Conda、NuGet、Gradle、Maven、Go、Cargo、Playwright、Hugging Face |
 | 用户文件 | 回收站、下载的安装包、下载文件夹、桌面（后两项只提示） |
 
