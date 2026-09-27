@@ -191,4 +191,34 @@ internal static class QuarantineCommand
         return result.Problems.Count == 0 ? CliApp.ExitOk : CliApp.ExitError;
     }
 
+    /// <summary>
+    /// --purge-now：把刚移入隔离区的批次立即彻底删除，马上释放空间，并输出结果。全部成功时返回 true。
+    /// 删除失败的批次留在隔离区里，可以稍后再删。
+    /// </summary>
+    internal static bool PurgeNow(CliContext context, IEnumerable<(QuarantineStore Store, string SessionId)> batches, IOperationLog log)
+    {
+        var w = context.Style;
+        var ok = true;
+        foreach (var (store, id) in batches)
+        {
+            if (store.Find(id) is not { } session)
+            {
+                continue;
+            }
+
+            var result = store.Purge([session], log);
+            foreach (var problem in result.Problems)
+            {
+                w.WriteLine($"  立即彻底删除失败：{problem.Reason}。文件还在隔离区里，可以稍后运行 diskslim quarantine purge {id} --execute", ConsoleColor.DarkYellow);
+                ok = false;
+            }
+
+            if (result.Purged > 0)
+            {
+                w.WriteLine($"  已立即彻底删除（--purge-now），释放了 {ByteSize.Format(result.PurgedBytes)}。", ConsoleColor.Green);
+            }
+        }
+
+        return ok;
+    }
 }

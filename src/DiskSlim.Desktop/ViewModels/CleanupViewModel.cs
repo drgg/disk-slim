@@ -65,7 +65,10 @@ public sealed class CleanupViewModel : ObservableObject
     private readonly string? _logPath;
     private readonly QuarantineStore? _quarantine;
     private CleanupPlan? _plan;
+    private CleanupResult? _preview;
     private bool _undone;
+    private bool _purgeAfterCleanup;
+    private string? _lowSpaceWarning;
     private CancellationTokenSource? _runCts;
     private CleanupStage _stage = CleanupStage.Preparing;
     private string _title = "正在生成清理计划…";
@@ -116,6 +119,7 @@ public sealed class CleanupViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsWorking));
                 OnPropertyChanged(nameof(IsConfirm));
                 OnPropertyChanged(nameof(CancelText));
+                OnPropertyChanged(nameof(ShowPurgeOption));
                 StartCommand.RaiseCanExecuteChanged();
             }
         }
@@ -155,6 +159,38 @@ public sealed class CleanupViewModel : ObservableObject
 
     public bool HasLog => LogFilePath is not null;
 
+    /// <summary>这次清理有文件要移入隔离区，可以选择清理后立即彻底删除。</summary>
+    public bool ShowPurgeOption => IsConfirm && _preview is { QuarantinedFiles: > 0 };
+
+    /// <summary>清理后立即彻底删除移入隔离区的文件，马上释放空间（不能撤销）。默认不勾选。</summary>
+    public bool PurgeAfterCleanup
+    {
+        get => _purgeAfterCleanup;
+        set
+        {
+            if (SetProperty(ref _purgeAfterCleanup, value) && _preview is { } preview && Stage == CleanupStage.Confirm)
+            {
+                Headline = DisplayText.ConfirmSummary(preview, value);
+                LowSpaceWarning = DisplayText.LowSpaceWarning(preview, value);
+            }
+        }
+    }
+
+    /// <summary>磁盘快满、而这次清理有一部分只是移入隔离区或回收站时的提醒。</summary>
+    public string? LowSpaceWarning
+    {
+        get => _lowSpaceWarning;
+        private set
+        {
+            if (SetProperty(ref _lowSpaceWarning, value))
+            {
+                OnPropertyChanged(nameof(HasLowSpaceWarning));
+            }
+        }
+    }
+
+    public bool HasLowSpaceWarning => LowSpaceWarning is not null;
+
     /// <summary>生成计划并模拟运行。</summary>
     public async Task PrepareAsync()
     {
@@ -186,8 +222,10 @@ public sealed class CleanupViewModel : ObservableObject
             return;
         }
 
+        _preview = preview;
         Title = "清理计划（模拟运行）";
-        Headline = DisplayText.ConfirmSummary(preview);
+        Headline = DisplayText.ConfirmSummary(preview, PurgeAfterCleanup);
+        LowSpaceWarning = DisplayText.LowSpaceWarning(preview, PurgeAfterCleanup);
         FooterText = "以上是模拟结果，还没有删除任何文件。正在被使用的文件会在执行时自动跳过。";
         Stage = CleanupStage.Confirm;
     }
@@ -221,13 +259,15 @@ public sealed class CleanupViewModel : ObservableObject
         Title = "正在清理…";
         Headline = "可以随时点“停止”，处理完当前文件后就会停下。";
         FooterText = "";
+        LowSpaceWarning = null;
+        var purge = PurgeAfterCleanup;
         using var cts = new CancellationTokenSource();
         _runCts = cts;
         CleanupResult result;
         using (log)
         {
             var executor = new CleanupExecutor(_operations, log, quarantine: _quarantine);
-            result = await Track(Task.Run(() => executor.Execute(_plan, dryRun: false, cts.Token)), () => $"{executor.CurrentRule} · 已处理 {ByteSize.Format(executor.BytesCleaned)}");
+            result = await Track(Task.Run(() => executor.Execute(_plan, dryRun: false, cts.Token, purgeQuarantine: purge)), () => $"{executor.CurrentRule} · 已处理 {ByteSize.Format(executor.BytesCleaned)}");
         }
 
         _runCts = null;

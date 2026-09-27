@@ -40,10 +40,10 @@ internal static class CleanCommand
             return CliApp.ExitCancelled;
         }
 
-        renderer.RenderPlan(plan, preview);
+        renderer.RenderPlan(plan, preview, options.PurgeNow);
         if (!options.Execute)
         {
-            renderer.RenderDryRunFooter(plan, options);
+            renderer.RenderDryRunFooter(plan, preview, options);
             return CliApp.ExitOk;
         }
 
@@ -55,7 +55,7 @@ internal static class CleanCommand
         }
 
         // 第二步：确认。
-        if (!options.AssumeYes && !Confirm(context, renderer, preview))
+        if (!options.AssumeYes && !Confirm(context, renderer, preview, options.PurgeNow))
         {
             return CliApp.ExitOk;
         }
@@ -78,7 +78,7 @@ internal static class CleanCommand
         {
             var executor = new CleanupExecutor(log: log);
             result = CliApp.RunWithProgress(
-                () => executor.Execute(plan, dryRun: false, context.CancellationToken),
+                () => executor.Execute(plan, dryRun: false, context.CancellationToken, purgeQuarantine: options.PurgeNow),
                 _ => $"正在清理：{executor.CurrentRule} · 已释放 {ByteSize.Format(executor.BytesCleaned)}",
                 context);
         }
@@ -87,7 +87,7 @@ internal static class CleanCommand
         return result.Cancelled ? CliApp.ExitCancelled : CliApp.ExitOk;
     }
 
-    private static bool Confirm(CliContext context, CleanRenderer renderer, CleanupResult preview)
+    private static bool Confirm(CliContext context, CleanRenderer renderer, CleanupResult preview, bool purgeNow)
     {
         if (!context.Interactive)
         {
@@ -96,7 +96,7 @@ internal static class CleanCommand
         }
 
         context.Style.WriteLine();
-        context.Style.Write(renderer.ConfirmPrompt(preview), ConsoleColor.Yellow);
+        context.Style.Write(renderer.ConfirmPrompt(preview, purgeNow), ConsoleColor.Yellow);
         var answer = context.Stdin.ReadLine()?.Trim();
         if (answer is "y" or "Y" or "yes" or "YES" or "Yes" or "是")
         {

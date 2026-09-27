@@ -45,6 +45,9 @@ public sealed class RuleOutcome
     /// <summary>执行被取消，这条规则没有做完（或没有开始）。</summary>
     public bool Cancelled { get; internal set; }
 
+    /// <summary>移入隔离区的文件在清理结束后立即被彻底删除了（不能再撤销）。</summary>
+    public bool PurgedAfterQuarantine { get; internal set; }
+
     public long SkippedTotal => SkippedTooNew + SkippedProtected + SkippedLinks;
 
     internal void AddFailure(string path, long bytes, string reason)
@@ -68,12 +71,21 @@ public sealed class CleanupResult
 
     public required long FreeBytesAfter { get; init; }
 
+    /// <summary>磁盘总容量（用来判断剩余空间是否紧张）；读不到时为 0。</summary>
+    public long DriveTotalBytes { get; init; }
+
     public bool Cancelled { get; init; }
 
     public string? LogPath { get; init; }
 
-    /// <summary>这次移入隔离区的批次 id；没有移入任何文件时为 null。</summary>
+    /// <summary>这次移入隔离区的批次 id；没有移入任何文件，或者已经立即彻底删除时为 null。</summary>
     public string? QuarantineSessionId { get; init; }
+
+    /// <summary>这次移入隔离区的文件在清理后立即被彻底删除了，空间已经释放。</summary>
+    public bool QuarantinePurged { get; init; }
+
+    /// <summary>要求立即彻底删除、但删除失败时的原因（文件仍在隔离区里，可以稍后再删）。</summary>
+    public string? QuarantinePurgeError { get; init; }
 
     /// <summary>永久删除的字节数（不含移到回收站和移入隔离区的）。</summary>
     public long DeletedBytes => Where(IsPermanent).Sum(r => r.Bytes);
@@ -142,11 +154,15 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
 
     public long BytesCleaned => Interlocked.Read(ref _bytesCleaned);
 
-    public CleanupResult Execute(CleanupPlan plan, bool dryRun, CancellationToken cancellationToken = default)
+    /// <param name="purgeQuarantine">
+    /// 清理结束后立即彻底删除这次移入隔离区的文件，马上释放空间（不能再撤销）。用于剩余空间紧张、等不了 7 天的时候。
+    /// 取消了的清理不会删除，已经移入的文件留在隔离区里。
+    /// </param>
+    public CleanupResult Execute(CleanupPlan plan, bool dryRun, CancellationToken cancellationToken = default, bool purgeQuarantine = false)
     {
         _quarantineStore ??= Quarantine.QuarantineStore.ForDrive(plan.DriveRoot);
         _quarantineWriter = null;
-        var freeBefore = FreeSpace(plan.DriveRoot);
+        var (freeBefore, total) = Platform.DiskSpace.Query(plan.DriveRoot);
         if (!dryRun)
         {
             Log("run-start", detail: $"DiskSlim {Reporting.DiskReportBuilder.ToolVersion}，磁盘 {plan.DriveRoot}，剩余 {freeBefore} 字节，{plan.Rules.Count} 条规则");
@@ -193,6 +209,23 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             }
         }
 
+        var sessionId = _quarantineWriter is { Count: > 0 } writer ? writer.Id : null;
+        var purged = false;
+        string? purgeError = null;
+        if (!dryRun && purgeQuarantine && !cancelled && sessionId is not null)
+        {
+            (purged, purgeError) = PurgeSession(sessionId);
+            if (purged)
+            {
+                foreach (var outcome in outcomes.Where(o => o.Rule.Action == CleanupAction.Quarantine))
+                {
+                    outcome.PurgedAfterQuarantine = true;
+                }
+
+                sessionId = null;
+            }
+        }
+
         var freeAfter = dryRun ? freeBefore : FreeSpace(plan.DriveRoot);
         if (!dryRun)
         {
@@ -205,10 +238,35 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             Rules = outcomes,
             FreeBytesBefore = freeBefore,
             FreeBytesAfter = freeAfter,
+            DriveTotalBytes = total,
             Cancelled = cancelled,
             LogPath = dryRun ? null : _log.FilePath,
-            QuarantineSessionId = _quarantineWriter is { Count: > 0 } writer ? writer.Id : null,
+            QuarantineSessionId = sessionId,
+            QuarantinePurged = purged,
+            QuarantinePurgeError = purgeError,
         };
+    }
+
+    /// <summary>彻底删除这次移入隔离区的一批，返回是否成功和失败原因。</summary>
+    private (bool Purged, string? Error) PurgeSession(string sessionId)
+    {
+        if (_quarantineStore!.Find(sessionId) is not { } session)
+        {
+            return (false, "隔离区里找不到这一批");
+        }
+
+        try
+        {
+            _quarantineStore.Purge(session);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log("failed", path: session.Directory, bytes: session.TotalBytes, detail: "立即彻底删除失败：" + Reason(ex));
+            return (false, Reason(ex));
+        }
+
+        Log("purged-quarantine", path: session.Directory, bytes: session.TotalBytes, detail: $"{session.Items.Count} 个文件，清理后立即彻底删除");
+        return (true, null);
     }
 
     private void RunRule(CleanupPlan plan, PlannedRule planned, RuleOutcome outcome, bool dryRun, CancellationToken cancellationToken)

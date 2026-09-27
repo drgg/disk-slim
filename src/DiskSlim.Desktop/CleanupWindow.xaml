@@ -20,6 +20,13 @@
             <StackPanel>
                 <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" />
                 <TextBlock Text="{Binding Headline}" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="14" />
+                <TextBlock Text="{Binding LowSpaceWarning}" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{StaticResource WarningBrush}"
+                           Visibility="{Binding HasLowSpaceWarning, Converter={StaticResource BoolToVisibility}}" />
+                <CheckBox IsChecked="{Binding PurgeAfterCleanup}" Margin="0,8,0,0"
+                          Visibility="{Binding ShowPurgeOption, Converter={StaticResource BoolToVisibility}}"
+                          ToolTip="磁盘快满、等不了 7 天时使用。勾选后这次移入隔离区的文件不能再撤销。">
+                    <TextBlock Text="清理后立即彻底删除移入隔离区的文件，马上释放空间（不能撤销）" TextWrapping="Wrap" />
+                </CheckBox>
                 <ProgressBar IsIndeterminate="True" Height="4" Margin="0,12,0,6"
                              Visibility="{Binding IsWorking, Converter={StaticResource BoolToVisibility}}" />
                 <TextBlock Text="{Binding ProgressText}" Foreground="{StaticResource SubtleTextBrush}" TextTrimming="CharacterEllipsis"

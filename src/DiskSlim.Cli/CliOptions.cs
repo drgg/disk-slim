@@ -75,6 +75,9 @@ internal sealed record CliOptions
 
     public string? LogPath { get; init; }
 
+    /// <summary>clean、dupes：移入隔离区后立即彻底删除，马上释放空间（不能撤销）。</summary>
+    public bool PurgeNow { get; init; }
+
     // ───── quarantine ─────
     public QuarantineVerb QuarantineVerb { get; init; } = QuarantineVerb.List;
 
@@ -172,6 +175,8 @@ internal static class CliParser
               --execute         真正执行清理（不加时只模拟，不删除任何文件）
           -y, --yes             执行前不再询问确认
               --log <文件>      操作日志的保存位置，默认 %LOCALAPPDATA%\DiskSlim\logs
+              --purge-now       移入隔离区的内容在清理后立即彻底删除，马上释放空间（不能撤销）。
+                                磁盘快满、等不了 7 天时用；dupes --remove 也可以用
 
         dupes 选项：
               --min-size <大小>  只查不小于这个大小的文件，默认 1MB（例如 500KB、10MB、1GB）
@@ -223,6 +228,7 @@ internal static class CliParser
         ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
         ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
         ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
+        ["--purge-now"] = [CliCommand.Clean, CliCommand.Dupes],
         ["--daily"] = [CliCommand.Schedule],
         ["--weekly"] = [CliCommand.Schedule],
         ["--at"] = [CliCommand.Schedule],
@@ -403,6 +409,10 @@ internal static class CliParser
                     options = options with { RemoveDuplicates = true };
                     break;
 
+                case "--purge-now":
+                    options = options with { PurgeNow = true };
+                    break;
+
                 case "--result-file":
                 {
                     if (NonBlank(TakeValue()) is not { } value)
@@ -528,6 +538,11 @@ internal static class CliParser
             if (options.Execute && !options.RemoveDuplicates)
             {
                 return Fail("--execute 需要和 --remove 一起使用（dupes 默认只查找，不移动任何文件）");
+            }
+
+            if (options.PurgeNow && !options.RemoveDuplicates)
+            {
+                return Fail("--purge-now 需要和 --remove 一起使用");
             }
 
             options = options with { DupesRoots = positionals };

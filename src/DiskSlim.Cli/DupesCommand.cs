@@ -1,6 +1,7 @@
 using DiskSlim.Core.Cleaning;
 using DiskSlim.Core.Duplicates;
 using DiskSlim.Core.Formatting;
+using DiskSlim.Core.Presentation;
 using DiskSlim.Core.Quarantine;
 using DiskSlim.Core.Reporting;
 
@@ -154,11 +155,15 @@ internal static class DupesCommand
         var files = preview.Sum(p => p.Files);
         var bytes = preview.Sum(p => p.Bytes);
         w.WriteLine($"■ 将把 {files:N0} 个副本移入隔离区（{ByteSize.Format(bytes)}），每组保留一份。", ConsoleColor.Cyan);
-        w.WriteLine("  隔离区里的文件可以随时恢复；确认没问题后彻底删除才会释放空间。", ConsoleColor.DarkGray);
+        w.WriteLine(options.PurgeNow
+            ? "  移入后立即彻底删除（--purge-now），马上释放空间，不能撤销。"
+            : "  隔离区里的文件可以随时恢复；确认没问题后彻底删除才会释放空间。", ConsoleColor.DarkGray);
         foreach (var skipped in preview.SelectMany(p => p.Skipped).Take(10))
         {
             w.WriteLine($"  跳过 {TextWidth.TruncateMiddle(skipped.Path, Math.Max(20, context.Width - 40))}：{skipped.Reason}", ConsoleColor.DarkYellow);
         }
+
+        WarnLowSpace(context, byDrive.Select((d, i) => (d.Key, preview[i].Bytes)));
 
         if (!options.Execute)
         {
@@ -177,7 +182,7 @@ internal static class DupesCommand
                 return CliApp.ExitOk;
             }
 
-            w.Write("  确定移入隔离区吗？输入 y 确认，其他任意键取消：", ConsoleColor.Yellow);
+            w.Write(options.PurgeNow ? "  确定移入隔离区并立即彻底删除吗（不能撤销）？输入 y 确认，其他任意键取消：" : "  确定移入隔离区吗？输入 y 确认，其他任意键取消：", ConsoleColor.Yellow);
             if (context.Stdin.ReadLine()?.Trim() is not ("y" or "Y" or "yes" or "YES" or "Yes" or "是"))
             {
                 w.WriteLine("  已取消，没有移动任何文件。");
@@ -197,30 +202,60 @@ internal static class DupesCommand
             return CliApp.ExitError;
         }
 
-        var results = new List<DuplicateRemovalResult>();
+        var results = new List<(QuarantineStore Store, DuplicateRemovalResult Result)>();
+        var purged = true;
         using (log)
         {
             foreach (var drive in byDrive)
             {
-                results.Add(new DuplicateRemover(QuarantineStore.ForDrive(drive.Key), guard, log).Remove(drive.ToList(), dryRun: false, context.CancellationToken));
+                var store = QuarantineStore.ForDrive(drive.Key);
+                results.Add((store, new DuplicateRemover(store, guard, log).Remove(drive.ToList(), dryRun: false, context.CancellationToken)));
+            }
+
+            w.WriteLine();
+            w.WriteLine($"  已把 {results.Sum(r => r.Result.Files):N0} 个副本（{ByteSize.Format(results.Sum(r => r.Result.Bytes))}）移入隔离区。", ConsoleColor.Green);
+            foreach (var skipped in results.SelectMany(r => r.Result.Skipped).Take(10))
+            {
+                w.WriteLine($"  跳过 {TextWidth.TruncateMiddle(skipped.Path, Math.Max(20, context.Width - 40))}：{skipped.Reason}", ConsoleColor.DarkYellow);
+            }
+
+            var batches = results.Where(r => r.Result.QuarantineSessionId is not null).Select(r => (r.Store, r.Result.QuarantineSessionId!)).ToList();
+            if (options.PurgeNow)
+            {
+                purged = QuarantineCommand.PurgeNow(context, batches, log);
+            }
+            else
+            {
+                foreach (var (_, sessionId) in batches)
+                {
+                    w.WriteLine($"  撤销：diskslim quarantine restore {sessionId}", ConsoleColor.Cyan);
+                    w.WriteLine($"  确认没问题后释放空间：diskslim quarantine purge {sessionId} --execute", ConsoleColor.DarkGray);
+                }
             }
         }
 
-        w.WriteLine();
-        w.WriteLine($"  已把 {results.Sum(r => r.Files):N0} 个副本（{ByteSize.Format(results.Sum(r => r.Bytes))}）移入隔离区。", ConsoleColor.Green);
-        foreach (var skipped in results.SelectMany(r => r.Skipped).Take(10))
-        {
-            w.WriteLine($"  跳过 {TextWidth.TruncateMiddle(skipped.Path, Math.Max(20, context.Width - 40))}：{skipped.Reason}", ConsoleColor.DarkYellow);
-        }
-
-        foreach (var sessionId in results.Select(r => r.QuarantineSessionId).OfType<string>())
-        {
-            w.WriteLine($"  撤销：diskslim quarantine restore {sessionId}", ConsoleColor.Cyan);
-            w.WriteLine($"  确认没问题后释放空间：diskslim quarantine purge {sessionId} --execute", ConsoleColor.DarkGray);
-        }
-
         w.WriteLine($"  操作日志：{log.FilePath}", ConsoleColor.DarkGray);
-        return CliApp.ExitOk;
+        return purged ? CliApp.ExitOk : CliApp.ExitError;
+    }
+
+    /// <summary>磁盘快满时，提醒移入隔离区并不能马上腾出空间（dupes 和 archives 共用）。</summary>
+    internal static void WarnLowSpace(CliContext context, IEnumerable<(string DriveRoot, long Bytes)> drives)
+    {
+        if (context.Options.PurgeNow)
+        {
+            return;
+        }
+
+        var warnings = drives.Select(d => DisplayText.QuarantineLowSpaceWarning(d.DriveRoot, d.Bytes)).OfType<string>().ToList();
+        foreach (var warning in warnings)
+        {
+            context.Style.WriteLine("  " + warning, ConsoleColor.DarkYellow);
+        }
+
+        if (warnings.Count > 0)
+        {
+            context.Style.WriteLine("  加 --purge-now 可以在移入后立即彻底删除，马上释放空间（不能撤销）。", ConsoleColor.DarkYellow);
+        }
     }
 
     private static string CommandLine(IReadOnlyList<string> roots, CliOptions options, string extra)
@@ -230,6 +265,11 @@ internal static class DupesCommand
         if (options.MinSize is { } minSize && minSize != DefaultMinSize)
         {
             parts.Add($"--min-size {minSize}");
+        }
+
+        if (options.PurgeNow)
+        {
+            parts.Add("--purge-now");
         }
 
         parts.Add(extra);

@@ -131,6 +131,7 @@ public static class DisplayText
         {
             CleanupAction.Recycle => $"已移到回收站 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
             CleanupAction.EmptyRecycleBin => $"已清空 {outcome.Files:N0} 项（{ByteSize.Format(outcome.Bytes)}）",
+            CleanupAction.Quarantine when outcome.PurgedAfterQuarantine => $"已彻底删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
             CleanupAction.Quarantine => $"已移入隔离区 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}），可以撤销",
             CleanupAction.PurgeQuarantine => $"已彻底删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）",
             _ => $"已删除 {outcome.Files:N0} 个文件（{ByteSize.Format(outcome.Bytes)}）"
@@ -146,7 +147,8 @@ public static class DisplayText
     }
 
     /// <summary>确认提示中“将要做什么”的描述。</summary>
-    public static string ConfirmSummary(CleanupResult preview)
+    /// <param name="purgeQuarantine">移入隔离区的文件会在清理后立即彻底删除。</param>
+    public static string ConfirmSummary(CleanupResult preview, bool purgeQuarantine = false)
     {
         var parts = new List<string>();
         if (preview.DeletedFiles > 0)
@@ -165,17 +167,55 @@ public static class DisplayText
         }
 
         var warning = preview.DeletedFiles > 0 ? "永久删除的内容无法恢复。" : "";
-        var note = preview.QuarantinedFiles > 0 ? "隔离区中的文件可以随时恢复，彻底删除后才会释放空间。" : "";
+        var note = preview.QuarantinedFiles == 0 ? ""
+            : purgeQuarantine ? "移入隔离区的文件会在清理后立即彻底删除，不能撤销。"
+            : "隔离区中的文件可以随时恢复，彻底删除后才会释放空间。";
         return "将要" + string.Join("，", parts) + "。" + warning + note;
+    }
+
+    /// <summary>
+    /// 剩余空间紧张、而这次清理有一部分只是移入隔离区或移到回收站（暂时还占着空间）时的提醒；不需要提醒时返回 null。
+    /// </summary>
+    /// <param name="purgeQuarantine">移入隔离区的内容会在清理后立即彻底删除（这部分不用提醒）。</param>
+    public static string? LowSpaceWarning(CleanupResult preview, bool purgeQuarantine = false)
+    {
+        var quarantined = purgeQuarantine ? 0 : preview.QuarantinedBytes;
+        if (!Platform.DiskSpace.IsLow(preview.FreeBytesBefore, preview.DriveTotalBytes) || quarantined + preview.RecycledBytes == 0)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        if (quarantined > 0)
+        {
+            parts.Add($"移入隔离区的 {ByteSize.Format(preview.QuarantinedBytes)} 要彻底删除后才会腾出空间");
+        }
+
+        if (preview.RecycledBytes > 0)
+        {
+            parts.Add($"移到回收站的 {ByteSize.Format(preview.RecycledBytes)} 要清空回收站后才会腾出空间");
+        }
+
+        return $"磁盘只剩 {ByteSize.Format(preview.FreeBytesBefore)}：" + string.Join("，", parts) + "。";
+    }
+
+    /// <summary>重复文件、压缩包这类要移入隔离区的内容：剩余空间紧张时的提醒；不需要提醒时返回 null。</summary>
+    public static string? QuarantineLowSpaceWarning(string driveRoot, long quarantinedBytes)
+    {
+        var (free, total) = Platform.DiskSpace.Query(driveRoot);
+        return quarantinedBytes > 0 && Platform.DiskSpace.IsLow(free, total)
+            ? $"{driveRoot} 只剩 {ByteSize.Format(free)}：移入隔离区的 {ByteSize.Format(quarantinedBytes)} 要彻底删除后才会腾出空间。"
+            : null;
     }
 
     /// <summary>移到回收站、移入隔离区这类“暂时还占着空间”的内容的说明；没有时返回 null。</summary>
     public static string? PendingSpaceNote(CleanupResult result)
     {
         var parts = new List<string>();
-        if (result.QuarantinedBytes > 0)
+        if (result.QuarantinedBytes > 0 && !result.QuarantinePurged)
         {
-            parts.Add($"{ByteSize.Format(result.QuarantinedBytes)} 移入了隔离区（可以恢复，彻底删除后才释放空间）");
+            parts.Add($"{ByteSize.Format(result.QuarantinedBytes)} 移入了隔离区（可以恢复，彻底删除后才释放空间）"
+                + (result.QuarantinePurgeError is { } error ? $"，立即彻底删除没有成功：{error}" : ""));
         }
 
         if (result.RecycledBytes > 0)

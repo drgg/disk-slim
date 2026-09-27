@@ -22,7 +22,7 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         w.WriteLine($"{driveRoot}  剩余 {ByteSize.Format(free)}  ·  管理员权限：{(elevated ? "是" : "否")}", ConsoleColor.DarkGray);
     }
 
-    public void RenderPlan(CleanupPlan plan, CleanupResult preview)
+    public void RenderPlan(CleanupPlan plan, CleanupResult preview, bool purgeNow)
     {
         Section("清理计划", $"选中 {plan.Rules.Count} 项");
         if (plan.Rules.Count == 0)
@@ -50,10 +50,10 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
             }
         }
 
-        RenderPlanTotals(preview);
+        RenderPlanTotals(preview, purgeNow);
     }
 
-    public void RenderDryRunFooter(CleanupPlan plan, CliOptions options)
+    public void RenderDryRunFooter(CleanupPlan plan, CleanupResult preview, CliOptions options)
     {
         var available = plan.Available.Where(r => r.Risk == RiskLevel.Medium || options.RuleIds.Count > 0).ToList();
         if (available.Count > 0)
@@ -73,12 +73,17 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         w.WriteLine();
         w.WriteLine("  这是模拟运行，没有删除任何文件。确认无误后运行：", ConsoleColor.Cyan);
         w.WriteLine("    " + ExecuteCommand(options), ConsoleColor.White);
+        if (!options.PurgeNow && preview.QuarantinedBytes > 0 && DisplayText.LowSpaceWarning(preview) is not null)
+        {
+            w.WriteLine("  磁盘快满了：加 --purge-now 可以在清理后立即彻底删除移入隔离区的内容，马上释放空间（不能撤销）。", ConsoleColor.DarkYellow);
+        }
+
         w.WriteLine();
     }
 
-    public string ConfirmPrompt(CleanupResult preview)
+    public string ConfirmPrompt(CleanupResult preview, bool purgeNow)
     {
-        return $"  {DisplayText.ConfirmSummary(preview)}确定执行吗？输入 y 确认，其他任意键取消：";
+        return $"  {DisplayText.ConfirmSummary(preview, purgeNow)}确定执行吗？输入 y 确认，其他任意键取消：";
     }
 
     public void RenderResult(CleanupResult result)
@@ -99,6 +104,11 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         if (DisplayText.PendingSpaceNote(result) is { } pending)
         {
             w.WriteLine("  " + pending, ConsoleColor.DarkGray);
+        }
+
+        if (result.QuarantinePurged)
+        {
+            w.WriteLine("  移入隔离区的内容已经在清理后立即彻底删除，空间已经释放。", ConsoleColor.DarkGray);
         }
 
         if (result.QuarantineSessionId is { } sessionId)
@@ -168,7 +178,7 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         }
     }
 
-    private void RenderPlanTotals(CleanupResult preview)
+    private void RenderPlanTotals(CleanupResult preview, bool purgeNow)
     {
         var total = preview.DeletedBytes + preview.RecycledBytes + preview.QuarantinedBytes;
         Section("合计", $"预计处理 {ByteSize.Format(total)}");
@@ -179,7 +189,9 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
 
         if (preview.QuarantinedFiles > 0)
         {
-            w.WriteLine($"  移入隔离区 {preview.QuarantinedFiles:N0} 个文件（{ByteSize.Format(preview.QuarantinedBytes)}），可以随时恢复；彻底删除后才会释放空间");
+            w.WriteLine(purgeNow
+                ? $"  移入隔离区 {preview.QuarantinedFiles:N0} 个文件（{ByteSize.Format(preview.QuarantinedBytes)}），清理后立即彻底删除（--purge-now），不能撤销"
+                : $"  移入隔离区 {preview.QuarantinedFiles:N0} 个文件（{ByteSize.Format(preview.QuarantinedBytes)}），可以随时恢复；彻底删除后才会释放空间");
         }
 
         if (preview.RecycledFiles > 0)
@@ -190,6 +202,12 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         if (total > 0)
         {
             w.WriteLine("  正在被使用的文件在执行时会自动跳过，实际释放的空间可能略少。", ConsoleColor.DarkGray);
+        }
+
+        // 磁盘快满时，“移入隔离区”“移到回收站”并不能马上腾出空间，要说清楚。
+        if (DisplayText.LowSpaceWarning(preview, purgeNow) is { } warning)
+        {
+            w.WriteLine("  " + warning, ConsoleColor.DarkYellow);
         }
     }
 
@@ -217,6 +235,11 @@ internal sealed class CleanRenderer(ConsoleStyle w, int width, bool verbose)
         if (options.RuleIds.Count > 0)
         {
             parts.Add("--rule " + string.Join(",", options.RuleIds));
+        }
+
+        if (options.PurgeNow)
+        {
+            parts.Add("--purge-now");
         }
 
         parts.Add("--execute");
