@@ -136,9 +136,9 @@ internal sealed class ConsoleReportRenderer(ConsoleStyle w, int width, bool verb
         {
             w.WriteLine("        " + hint, ConsoleColor.DarkCyan);
         }
-        else if (Core.SystemTasks.SystemTaskCatalog.ForRule(item.Rule.Id) is { } systemTask)
+        else if (Core.SystemTasks.SystemTaskCatalog.ForRule(item.Rule.Id) is { Count: > 0 } systemTasks)
         {
-            w.WriteLine($"        可用系统清理：diskslim system run {systemTask.Id}（需要管理员权限）", ConsoleColor.DarkCyan);
+            w.WriteLine($"        可用系统清理：{string.Join(" 或 ", systemTasks.Select(t => "diskslim system run " + t.Id))}（需要管理员权限）", ConsoleColor.DarkCyan);
         }
 
         if (item.RunningProcesses.Count > 0)

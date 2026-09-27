@@ -42,7 +42,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
   - 右侧列出当前目录的子项和各自的可清理空间；右键可以在资源管理器中显示。
 - **最大的文件**：最大的 50 个文件。
 - **重复文件**：选择位置和最小文件大小后查找，勾选的副本移入隔离区（见下文）。
-- **系统清理**：DISM 组件存储、Windows 更新缓存、传递优化缓存、关闭休眠，点“运行”后弹出 UAC 提示（见下文）。
+- **系统清理**：DISM 组件存储、Windows 更新缓存、传递优化缓存、休眠文件（精简或关闭）、压缩系统文件，点“运行”后弹出 UAC 提示（见下文）。
 - **隔离区**：查看、恢复或彻底删除之前移入隔离区的内容，包括旧版工具留在磁盘根目录 `.diskslim-quarantine` 里的批次。
 - **空间变化**：已用空间的趋势图，以及和之前某次扫描相比，空间涨在哪里、减在哪里（见下文）。
 - **定时清理**：开启、修改、关闭定时清理，查看会自动清理哪些项目和最近的运行记录（见下文）。
@@ -202,10 +202,14 @@ diskslim system run hibernation-off --execute
 | `component-store` | `DISM /Online /Cleanup-Image /StartComponentCleanup`：删除已被替代的旧系统组件。**不用 `/ResetBase`**，已安装的更新仍可卸载 |
 | `windows-update-cache` | 暂停 Windows 更新和后台传输服务 → 删除下载过的更新包 → 把服务恢复成原来的状态（删除失败也一定恢复） |
 | `delivery-optimization` | 系统自带的 `Delete-DeliveryOptimizationCache -Force` |
-| `hibernation-off` | `powercfg /hibernate off`，释放 hiberfil.sys；恢复用 `powercfg /hibernate on` |
+| `hibernation-reduced` | `powercfg /hibernate /type reduced`：hiberfil.sys 缩小到内存的 20% 左右，**保留“快速启动”**，只是不能再“休眠”；恢复用 `powercfg /hibernate /type full` |
+| `hibernation-off` | `powercfg /hibernate off`，删除 hiberfil.sys（“快速启动”也一起关闭）；恢复用 `powercfg /hibernate on` |
+| `compact-os` | `compact /CompactOS:always`：用 Windows 自带的压缩方式存放系统文件，通常能省出 2 GB 左右，耗时 10～30 分钟；恢复用 `compact /CompactOS:never` |
 
-- **固定白名单**：只有上面四项，做法写死在代码里，不能通过规则文件或参数修改。系统程序一律用 `C:\Windows\System32` 下的完整路径调用。
+- **固定白名单**：只有上面六项，做法写死在代码里，不能通过规则文件或参数修改。系统程序一律用 `C:\Windows\System32` 下的完整路径调用。
 - **默认只说明**，加 `--execute` 并确认后才执行；每一步写入操作日志。
+- **先检查能不能运行**：有等待重启才能完成的系统更新时（注册表里组件服务标记了 RebootPending），DISM 的组件清理一定会失败（`0x800F0806`），这时不启动 DISM，直接提示先重启；休眠文件已经是精简模式、系统文件已经压缩过时也不再运行。
+- **看得懂的错误码**：DISM 返回的错误码以 `0x800F0806` 这样的形式显示，常见的（等待重启、找不到源文件、磁盘空间不足、服务被禁用、文件被占用……）会附上说明。
 - **需要管理员权限**：不是管理员时会以管理员身份启动一个 diskslim 助手进程（弹出 UAC 提示），它只接受白名单里的任务，结果只写回 DiskSlim 自己的助手目录。
 - 图形界面的“系统清理”页面也是通过这个助手执行的，所以发布时 `diskslim.exe` 要和 `DiskSlimApp.exe` 放在同一个文件夹。
 - DISM 这类系统维护程序**不支持中途取消**：强行结束可能留下不一致的状态。

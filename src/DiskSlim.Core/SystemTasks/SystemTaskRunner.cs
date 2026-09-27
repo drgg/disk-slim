@@ -53,12 +53,14 @@ public sealed record SystemTaskResult
 /// 系统程序一律用 System32 下的完整路径调用，避免被同名程序冒充。需要管理员权限。
 /// </summary>
 /// <param name="updateDownloadDirectory">Windows 更新下载缓存的位置，只在测试时替换。</param>
+/// <param name="isRebootPending">组件服务是否在等重启，只在测试时替换。</param>
 public sealed class SystemTaskRunner(
     ICommandRunner? commands = null,
     IServiceControl? services = null,
     IOperationLog? log = null,
     Func<bool>? isElevated = null,
-    string? updateDownloadDirectory = null)
+    string? updateDownloadDirectory = null,
+    Func<bool>? isRebootPending = null)
 {
     private const int RebootRequiredExitCode = 3010;
     private static readonly string[] UpdateServices = ["wuauserv", "bits"];
@@ -68,6 +70,7 @@ public sealed class SystemTaskRunner(
     private readonly IOperationLog _log = log ?? NullOperationLog.Instance;
     private readonly Func<bool> _isElevated = isElevated ?? SystemInfo.IsElevated;
     private readonly string _updateDownloadDirectory = updateDownloadDirectory ?? SystemTaskCatalog.UpdateDownloadDirectory;
+    private readonly Func<bool> _isRebootPending = isRebootPending ?? SystemState.ComponentServicingRebootPending;
 
     public static string SystemProgram(string name) => Path.Combine(Environment.SystemDirectory, name);
 
@@ -93,10 +96,15 @@ public sealed class SystemTaskRunner(
         {
             result = task.Id switch
             {
+                // 有等重启的更新时 DISM 一定会失败（0x800F0806），不用白等几分钟。
+                SystemTaskCatalog.ComponentStore when _isRebootPending() =>
+                    new SystemTaskResult { TaskId = task.Id, Success = false, Message = "没有运行：" + SystemTaskCatalog.RestartFirstNote + "。请先重启电脑，再运行这项任务。" },
                 SystemTaskCatalog.ComponentStore => await RunProgram(task, "dism.exe", ["/Online", "/Cleanup-Image", "/StartComponentCleanup"]),
                 SystemTaskCatalog.DeliveryOptimization => await RunProgram(task, @"WindowsPowerShell\v1.0\powershell.exe",
                     ["-NoProfile", "-NonInteractive", "-Command", "Delete-DeliveryOptimizationCache -Force"]),
+                SystemTaskCatalog.HibernationReduced => await RunProgram(task, "powercfg.exe", ["/hibernate", "/type", "reduced"]),
                 SystemTaskCatalog.HibernationOff => await RunProgram(task, "powercfg.exe", ["/hibernate", "off"]),
+                SystemTaskCatalog.CompactOs => await RunProgram(task, "compact.exe", ["/CompactOS:always"]),
                 SystemTaskCatalog.WindowsUpdateCache => ClearUpdateCache(task),
                 _ => new SystemTaskResult { TaskId = task.Id, Success = false, Message = "这项任务还没有实现。" },
             };
@@ -118,7 +126,7 @@ public sealed class SystemTaskRunner(
         Log("command", task.Id, $"{path} {string.Join(" ", arguments)}");
         var output = await _commands.RunAsync(path, arguments);
         var success = output.ExitCode is 0 or RebootRequiredExitCode;
-        Log(success ? "command-done" : "failed", task.Id, $"退出码 {output.ExitCode}");
+        Log(success ? "command-done" : "failed", task.Id, $"退出码 {FormatExitCode(output.ExitCode)}");
         return new SystemTaskResult
         {
             TaskId = task.Id,
@@ -128,9 +136,32 @@ public sealed class SystemTaskRunner(
             RebootRequired = output.ExitCode == RebootRequiredExitCode,
             Message = success
                 ? output.ExitCode == RebootRequiredExitCode ? "完成，重启电脑后生效。" : "完成。"
-                : $"{program} 返回了错误码 {output.ExitCode}，详情见输出。",
+                : $"{program} 返回了错误码 {FormatExitCode(output.ExitCode)}"
+                    + (ExplainExitCode(output.ExitCode) is { } reason ? $"：{reason}。" : "，详情见输出。"),
         };
     }
+
+    /// <summary>
+    /// 系统程序（主要是 DISM）常见错误码的说明；不认识的返回 null。
+    /// DISM 返回的是 HRESULT，以负数形式出现在退出码里，例如 -2146498554 就是 0x800F0806。
+    /// </summary>
+    public static string? ExplainExitCode(int exitCode) => unchecked((uint)exitCode) switch
+    {
+        0x800F0806 => "有等待重启才能完成的系统更新，请先重启电脑再运行",
+        0x800F0823 => "需要先安装最新的服务堆栈更新：请先运行 Windows 更新，重启后再试",
+        0x800F081F or 0x800F0906 => "找不到所需的系统源文件，请确认能联网、Windows 更新没有被禁用后再试",
+        0x80070005 or 5 => "拒绝访问：需要以管理员身份运行",
+        0x80070020 => "文件正被其他程序使用（可能是杀毒软件或正在进行的系统更新），稍后再试",
+        0x80070070 => "磁盘空间不足，请先清理出一些空间再运行",
+        0x80070422 => "需要的系统服务被禁用了（例如 Windows 模块安装程序或 Windows 更新服务）",
+        0x800705B4 => "操作超时，稍后再试",
+        0x8007000E => "内存不足，关闭一些程序后再试",
+        87 => "参数无效：这个版本的 Windows 可能不支持这项操作",
+        _ => null,
+    };
+
+    /// <summary>HRESULT 形式的错误码写成 0x800F0806，普通的小数字原样输出。</summary>
+    public static string FormatExitCode(int exitCode) => exitCode < 0 ? $"0x{unchecked((uint)exitCode):X8}" : exitCode.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>暂停更新服务 → 删除下载缓存 → 恢复服务。不论删除成功与否，原来在运行的服务都会被重新启动。</summary>
     private SystemTaskResult ClearUpdateCache(SystemTask task)

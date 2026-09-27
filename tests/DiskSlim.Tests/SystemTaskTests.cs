@@ -16,15 +16,70 @@ public sealed class SystemTaskTests : IDisposable
 
     public void Dispose() => _dir.Dispose();
 
-    private SystemTaskRunner Runner(bool elevated = true) =>
-        new(_commands, _services, _log, () => elevated, _dir.PathOf("SoftwareDistribution/Download"));
+    // 不读这台电脑真实的“等待重启”状态，测试结果不受运行环境影响。
+    private SystemTaskRunner Runner(bool elevated = true, bool rebootPending = false) =>
+        new(_commands, _services, _log, () => elevated, _dir.PathOf("SoftwareDistribution/Download"), () => rebootPending);
 
     [Fact]
     public void Catalog_is_a_fixed_allowlist()
     {
-        Assert.Equal(["component-store", "windows-update-cache", "delivery-optimization", "hibernation-off"], SystemTaskCatalog.All.Select(t => t.Id));
+        Assert.Equal(
+            ["component-store", "windows-update-cache", "delivery-optimization", "hibernation-reduced", "hibernation-off", "compact-os"],
+            SystemTaskCatalog.All.Select(t => t.Id));
         Assert.Null(SystemTaskCatalog.Find("format-c"));
-        Assert.Equal("hibernation-off", SystemTaskCatalog.ForRule("hibernation-file")!.Id);
+        Assert.Equal(["hibernation-reduced", "hibernation-off"], SystemTaskCatalog.ForRule("hibernation-file").Select(t => t.Id));
+        Assert.Empty(SystemTaskCatalog.ForRule("npm-cache"));
+    }
+
+    [Fact]
+    public async Task Component_cleanup_is_not_started_while_a_reboot_is_pending()
+    {
+        var result = await Runner(rebootPending: true).RunAsync("component-store");
+
+        Assert.False(result.Success);
+        Assert.Contains("重启", result.Message);
+        Assert.Contains("0x800F0806", result.Message);
+        Assert.Empty(_commands.Calls); // 一定会失败的 DISM 根本不启动
+        Assert.Equal(["run-start", "run-end"], _log.Entries.Select(e => e.Event));
+    }
+
+    [Fact]
+    public async Task Other_tasks_still_run_while_a_reboot_is_pending()
+    {
+        var result = await Runner(rebootPending: true).RunAsync("hibernation-reduced");
+
+        Assert.True(result.Success);
+        Assert.Single(_commands.Calls);
+    }
+
+    [Theory]
+    [InlineData(-2146498554, "0x800F0806", "重启")]  // CBS_E_PENDING：这台电脑上真实遇到过的
+    [InlineData(-2147024784, "0x80070070", "磁盘空间不足")]
+    [InlineData(-2146498529, "0x800F081F", "源文件")]
+    [InlineData(1, "1", "详情见输出")]                 // 不认识的错误码
+    public async Task Failure_messages_explain_common_dism_error_codes(int exitCode, string shown, string explanation)
+    {
+        _commands.ExitCode = exitCode;
+
+        var result = await Runner().RunAsync("component-store");
+
+        Assert.False(result.Success);
+        Assert.Contains(shown, result.Message);
+        Assert.Contains(explanation, result.Message);
+        Assert.DoesNotContain("-2146", result.Message);
+    }
+
+    [Theory]
+    [InlineData(null, 16L << 30, true, null)]                      // 休眠已关闭
+    [InlineData(6_840_000_000L, 17_102_372_864L, false, 3_419_525_428L)] // 16 GB 内存、完整休眠文件：约省下一半
+    [InlineData(3_400_000_000L, 17_102_372_864L, true, null)]     // 已经是精简模式
+    [InlineData(6_840_000_000L, 0L, false, null)]                  // 读不到内存大小：不估算
+    public void Reduced_hibernation_estimate(long? fileBytes, long memoryBytes, bool notNeeded, long? expectedBytes)
+    {
+        var estimate = SystemTaskCatalog.EstimateReducedHibernation(fileBytes, memoryBytes);
+
+        Assert.Equal(notNeeded, estimate.NotNeeded);
+        Assert.Equal(expectedBytes, estimate.Bytes is { } b && !notNeeded ? b : null);
     }
 
     [Fact]
@@ -41,7 +96,9 @@ public sealed class SystemTaskTests : IDisposable
 
     [Theory]
     [InlineData("component-store", "dism.exe", "/Online /Cleanup-Image /StartComponentCleanup")]
+    [InlineData("hibernation-reduced", "powercfg.exe", "/hibernate /type reduced")]
     [InlineData("hibernation-off", "powercfg.exe", "/hibernate off")]
+    [InlineData("compact-os", "compact.exe", "/CompactOS:always")]
     [InlineData("delivery-optimization", "powershell.exe", "-NoProfile -NonInteractive -Command Delete-DeliveryOptimizationCache -Force")]
     public async Task Runs_exactly_the_fixed_system_command_by_full_path(string taskId, string program, string arguments)
     {

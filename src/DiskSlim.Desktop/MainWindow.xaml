@@ -406,6 +406,9 @@
                                                                     <DataTrigger Binding="{Binding IsSizeEstimate}" Value="True">
                                                                         <Setter Property="Foreground" Value="#2E7D32" />
                                                                     </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding NeedsRestart}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                                    </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </TextBlock.Style>
@@ -421,7 +424,7 @@
                                             <Button Grid.Column="1" Content="运行…" Style="{StaticResource PrimaryButton}" VerticalAlignment="Top" Margin="16,0,0,0" MinWidth="80"
                                                     Command="{Binding DataContext.RunTaskCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                     CommandParameter="{Binding}"
-                                                    Visibility="{Binding NotNeeded, Converter={StaticResource BoolToVisibility}, ConverterParameter=invert}" />
+                                                    Visibility="{Binding CanRun, Converter={StaticResource BoolToVisibility}}" />
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

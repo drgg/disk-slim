@@ -625,7 +625,7 @@
       "category": "系统",
       "paths": ["%SystemDrive%/hiberfil.sys"],
       "risk": "medium",
-      "advice": "如果不用“休眠”，可以运行 diskslim system run hibernation-off 关闭（需要管理员权限），代价是同时失去“快速启动”。"
+      "advice": "想保留“快速启动”：运行 diskslim system run hibernation-reduced，休眠文件缩小到内存的 20% 左右（通常能省一半）。完全不用休眠：运行 diskslim system run hibernation-off 删除它，代价是同时失去“快速启动”。都需要管理员权限。"
     },
     {
       "id": "page-file",

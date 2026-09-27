@@ -12,6 +12,7 @@ public sealed class SystemTaskItemViewModel(SystemTask task) : ObservableObject
     private string _status = "";
     private bool _isRunning;
     private bool _notNeeded;
+    private bool _needsRestart;
     private bool _isSizeEstimate;
 
     public SystemTask Task { get; } = task;
@@ -35,7 +36,32 @@ public sealed class SystemTaskItemViewModel(SystemTask task) : ObservableObject
 
     public bool IsRunning { get => _isRunning; set => SetProperty(ref _isRunning, value); }
 
-    public bool NotNeeded { get => _notNeeded; set => SetProperty(ref _notNeeded, value); }
+    public bool NotNeeded
+    {
+        get => _notNeeded;
+        set
+        {
+            if (SetProperty(ref _notNeeded, value))
+            {
+                OnPropertyChanged(nameof(CanRun));
+            }
+        }
+    }
+
+    /// <summary>现在运行一定会失败，要先重启电脑（界面上用警告色显示，不给“运行”按钮）。</summary>
+    public bool NeedsRestart
+    {
+        get => _needsRestart;
+        set
+        {
+            if (SetProperty(ref _needsRestart, value))
+            {
+                OnPropertyChanged(nameof(CanRun));
+            }
+        }
+    }
+
+    public bool CanRun => !NotNeeded && !NeedsRestart;
 }
 
 /// <summary>
@@ -79,6 +105,7 @@ public sealed class SystemTasksViewModel : ObservableObject
         {
             var estimate = await Task.Run(() => SystemTaskCatalog.Estimate(item.Task));
             item.NotNeeded = estimate.NotNeeded;
+            item.NeedsRestart = estimate.NeedsRestart;
             item.IsSizeEstimate = !estimate.NotNeeded && estimate.Bytes is > 0;
             item.EstimateText = estimate.NotNeeded ? estimate.Note
                 : estimate.Bytes is { } bytes ? $"约可释放 {ByteSize.Format(bytes)}" + (estimate.Note.Length > 0 ? $"（{estimate.Note}）" : "")

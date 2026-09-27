@@ -36,10 +36,13 @@ internal static class SystemCommand
             var estimate = SystemTaskCatalog.Estimate(task);
             w.WriteLine();
             w.Write($"  {task.Name}", ConsoleColor.White);
-            w.WriteLine("  " + EstimateText(estimate), estimate.NotNeeded ? ConsoleColor.DarkGray : ConsoleColor.Green);
+            w.WriteLine("  " + EstimateText(estimate), estimate.NotNeeded ? ConsoleColor.DarkGray : estimate.NeedsRestart ? ConsoleColor.DarkYellow : ConsoleColor.Green);
             w.WriteLine($"    {task.Description}", ConsoleColor.DarkGray);
             w.WriteLine($"    注意：{task.Warning}", ConsoleColor.DarkYellow);
-            w.WriteLine($"    运行：diskslim system run {task.Id} --execute", ConsoleColor.DarkCyan);
+            if (estimate.CanRun)
+            {
+                w.WriteLine($"    运行：diskslim system run {task.Id} --execute", ConsoleColor.DarkCyan);
+            }
         }
 
         w.WriteLine();
@@ -59,10 +62,17 @@ internal static class SystemCommand
             w.WriteLine($"  {undo}", ConsoleColor.DarkGray);
         }
 
-        w.WriteLine($"  预计：{EstimateText(estimate)}", ConsoleColor.DarkGray);
+        w.WriteLine($"  预计：{EstimateText(estimate)}", estimate.NeedsRestart ? ConsoleColor.DarkYellow : ConsoleColor.DarkGray);
         if (estimate.NotNeeded)
         {
             return CliApp.ExitOk;
+        }
+
+        if (estimate.NeedsRestart)
+        {
+            w.WriteLine();
+            w.WriteLine("现在运行一定会失败，没有做任何改动。请先重启电脑，再运行这项任务。", ConsoleColor.Yellow);
+            return options.Execute ? CliApp.ExitError : CliApp.ExitOk;
         }
 
         if (!options.Execute)
