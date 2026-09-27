@@ -2,7 +2,11 @@
   // DiskSlim 默认清理规则
   //
   // paths      路径模板：支持环境变量（%LOCALAPPDATA%）和通配符（* ?，可出现在任意一级），用 / 或 \\ 分隔均可；
-  //            ::RecycleBin 表示回收站。
+  //            ::RecycleBin 表示回收站。位置不固定的目录用开头的前缀表示：
+  //              <drives>          每块本地硬盘的根目录（D:\、E:\……）
+  //              <steam-libraries> Steam 的每个游戏库
+  //              <app:xxx.exe>     卸载信息里登记的、直接包含 xxx.exe 的安装目录
+  // oldVersionsOnly  路径命中按版本号命名的程序文件夹时只处理旧版本（最新版本和程序正在用的版本保留）。
   // risk       low    = 可放心清理（缓存、临时文件，删除后会自动重建）
   //            medium = 需要确认（删除后要重新下载，或需要用户判断）
   //            high   = 仅供参考（用户数据或系统文件，不建议用工具清理）
@@ -384,6 +388,27 @@
       "advice": "夸克网盘客户端的网页缓存，删除后会自动重建，不影响已经下载的文件。"
     },
     {
+      "id": "quark-old-versions",
+      "name": "夸克旧版本的程序文件",
+      "action": "quarantine",
+      "category": "国内软件",
+      "paths": ["<app:quark.exe>/*.*.*.*"],
+      "oldVersionsOnly": true,
+      "risk": "medium",
+      "processes": ["quark"],
+      "advice": "夸克自动更新后留下的旧版本程序文件夹（按版本号命名，每个 1 GB 多）。最新的版本和 quark.exe 正在用的版本都会保留，只处理其余的旧版本。需要先关闭夸克。"
+    },
+    {
+      "id": "qqmusic-cache",
+      "name": "QQ 音乐缓存",
+      "action": "quarantine",
+      "category": "国内软件",
+      "paths": ["<drives>/QQMusicCache"],
+      "risk": "medium",
+      "processes": ["QQMusic"],
+      "advice": "QQ 音乐的缓存目录（在线播放过的歌曲、歌词、图片和网页缓存），不包括下载的歌曲。也可以在 QQ 音乐的 设置 → 下载与缓存 里清除缓存、限制缓存大小。"
+    },
+    {
       "id": "coze-cache",
       "name": "扣子（Coze）缓存和日志",
       "action": "delete",
@@ -431,6 +456,14 @@
       "advice": "模拟器里的安卓应用和电脑之间共享的文件（截图、导出的文件……），请手动整理。"
     },
     {
+      "id": "mumu-vm-disks",
+      "name": "MuMu 模拟器的虚拟磁盘",
+      "category": "应用",
+      "paths": ["<drives>/Program Files/Netease/MuMuPlayer*/vms"],
+      "risk": "high",
+      "advice": "MuMu 模拟器每个实例的虚拟磁盘（data.vdi），里面是安卓应用和它们的数据。用久了会越来越大，在模拟器里卸载应用也不会自动变小。不用的实例可以在 MuMu 多开器里删除（实例里的应用和数据会一起删掉）。"
+    },
+    {
       "id": "steam-htmlcache",
       "name": "Steam 网页缓存",
       "action": "delete",
@@ -443,6 +476,36 @@
       "risk": "low",
       "processes": ["steam", "steamwebhelper"],
       "advice": "Steam 商店和社区页面的缓存，删除后会自动重建，不影响游戏和存档。需要先完全退出 Steam（包括托盘图标）。"
+    },
+    {
+      "id": "steam-library-cache",
+      "name": "Steam 游戏库的着色器缓存和临时文件",
+      "action": "delete",
+      "category": "游戏",
+      "paths": ["<steam-libraries>/steamapps/shadercache", "<steam-libraries>/steamapps/temp"],
+      "risk": "low",
+      "processes": ["steam", "steamwebhelper"],
+      "advice": "每个 Steam 游戏库（包括其他盘上的 SteamLibrary）里的着色器预缓存和临时文件。删除后游戏第一次启动时会重新编译或下载着色器，稍慢一点。需要先完全退出 Steam。"
+    },
+    {
+      "id": "steam-downloading",
+      "name": "Steam 没下载完的游戏和更新",
+      "action": "quarantine",
+      "category": "游戏",
+      "paths": ["<steam-libraries>/steamapps/downloading"],
+      "risk": "medium",
+      "processes": ["steam", "steamwebhelper"],
+      "advice": "Steam 下载到一半（或更新失败）留下的文件。删除后，还没下载完的游戏和更新要重新下载。需要先完全退出 Steam。"
+    },
+    {
+      "id": "mydrivers-downloads",
+      "name": "驱动精灵下载的驱动和驱动备份",
+      "action": "quarantine",
+      "category": "应用",
+      "paths": ["<drives>/MyDrivers/update", "<drives>/MyDrivers/backup"],
+      "risk": "medium",
+      "processes": ["DriverGenius"],
+      "advice": "驱动精灵下载的驱动安装包（update）和备份的旧驱动（backup）。驱动装好后安装包就用不到了；备份只在想退回旧驱动时有用。"
     },
 
     {
@@ -697,9 +760,9 @@
       "id": "page-file",
       "name": "虚拟内存文件",
       "category": "系统",
-      "paths": ["%SystemDrive%/pagefile.sys", "%SystemDrive%/swapfile.sys"],
+      "paths": ["<drives>/pagefile.sys", "<drives>/swapfile.sys"],
       "risk": "high",
-      "advice": "由系统管理，建议保持“自动管理分页文件大小”。关闭或设得太小可能导致程序崩溃。"
+      "advice": "由系统管理，不能直接删除。建议保持“自动管理分页文件大小”，关闭或设得太小可能导致程序崩溃。页面文件可以换到剩余空间更多的盘：系统属性 → 高级 → 性能设置 → 高级 → 虚拟内存 → 更改（重启后生效）。"
     },
     {
       "id": "windows-installer-cache",

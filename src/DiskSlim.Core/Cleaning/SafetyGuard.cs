@@ -108,6 +108,13 @@ public sealed class SafetyGuard
         return _forbiddenZones.Any(z => string.Equals(z, full, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>这个路径是否位于某个禁区之中（或者就是禁区）。</summary>
+    public bool IsInForbiddenZone(string path)
+    {
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return _forbiddenZones.Any(z => PathExpander.IsSameOrInside(full, z));
+    }
+
     /// <summary>检查一个清理目标，允许时返回 null，否则返回原因。</summary>
     public string? Check(string path)
     {

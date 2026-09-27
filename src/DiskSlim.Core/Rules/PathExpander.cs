@@ -30,13 +30,44 @@ public static partial class PathExpander
     public static bool IsSpecial(string pattern) => IsRecycleBin(pattern) || IsQuarantine(pattern);
 
     /// <summary>
-    /// 展开环境变量和通配符，返回实际存在的文件或目录（按路径排序）。
-    /// 环境变量未定义、路径不是绝对路径或者不存在时返回空列表。
+    /// 展开环境变量、<c>&lt;drives&gt;</c> 这类路径前缀（见 <see cref="PathTokens"/>）和通配符，返回实际存在的文件或目录（按路径排序）。
+    /// 环境变量未定义、前缀不认识、路径不是绝对路径或者不存在时返回空列表。
     /// </summary>
-    public static IReadOnlyList<string> Expand(string pattern)
+    /// <param name="tokens">解析路径前缀；为 null 时按这台电脑的实际情况解析。</param>
+    public static IReadOnlyList<string> Expand(string pattern, IPathTokenSource? tokens = null)
     {
-        var expanded = Environment.ExpandEnvironmentVariables(pattern.Trim()).Replace('/', '\\');
-        if (UnresolvedVariable().IsMatch(expanded) || !Path.IsPathFullyQualified(expanded))
+        if (!PathTokens.TrySplit(pattern, out var token, out var rest))
+        {
+            var expanded = Environment.ExpandEnvironmentVariables(pattern.Trim()).Replace('/', '\\');
+            return UnresolvedVariable().IsMatch(expanded) ? [] : Walk(expanded);
+        }
+
+        if (!PathTokens.IsKnown(token))
+        {
+            return [];
+        }
+
+        // 前缀代表的目录是真实路径，不再展开其中的环境变量；只展开后半部分。
+        var suffix = Environment.ExpandEnvironmentVariables(rest).Replace('/', '\\');
+        if (UnresolvedVariable().IsMatch(suffix))
+        {
+            return [];
+        }
+
+        var results = new List<string>();
+        foreach (var basePath in (tokens ?? SystemPathTokens.Instance).Resolve(token))
+        {
+            results.AddRange(Walk(suffix.Length == 0 ? basePath : Path.Join(basePath, suffix)));
+        }
+
+        return results.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>逐级展开通配符，只返回实际存在的路径。</summary>
+    private static List<string> Walk(string path)
+    {
+        var expanded = path.Replace('/', '\\');
+        if (!Path.IsPathFullyQualified(expanded))
         {
             return [];
         }

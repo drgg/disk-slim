@@ -311,7 +311,18 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             else if (Directory.Exists(target.Path))
             {
                 // 目标目录本身永远保留，只处理里面的内容。
-                ProcessDirectory(target.Path, depth: 0, context);
+                var emptied = ProcessDirectory(target.Path, depth: 0, context);
+
+                // 例外：旧版本的程序文件夹清空后连文件夹一起删掉，不留下一个空的版本文件夹。
+                if (emptied && rule.OldVersionsOnly && rule.Action is CleanupAction.Delete or CleanupAction.Quarantine
+                    && (dryRun || _ops.TryDeleteEmptyDirectory(target.Path)))
+                {
+                    outcome.Directories++;
+                    if (!dryRun)
+                    {
+                        Log("removed-dir", rule.Id, target.Path);
+                    }
+                }
             }
         }
     }

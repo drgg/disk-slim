@@ -271,7 +271,7 @@ public sealed partial class DuplicateFinder
     /// </summary>
     public static IReadOnlyList<ProtectedArea> ProtectedAreasFrom(RuleSet rules) => rules.Rules
         .Where(r => r.Risk == RiskLevel.High && r.Category != UserFilesCategory)
-        .SelectMany(r => r.Paths.Where(p => !PathExpander.IsSpecial(p)).SelectMany(PathExpander.Expand)
+        .SelectMany(r => r.Paths.Where(p => !PathExpander.IsSpecial(p)).SelectMany(p => PathExpander.Expand(p))
             .Select(path => new ProtectedArea(path, $"属于“{r.Name}”，请在对应软件里处理")))
         .ToList();
 

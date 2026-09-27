@@ -288,18 +288,30 @@ diskslim schedule disable
 
 ## 规则文件
 
-内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 67 条，其中 45 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
+内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 73 条，其中 50 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
 
 覆盖的内容：
 
 | 类别 | 规则 |
 |---|---|
-| 系统 | 临时文件、Windows 更新缓存、传递优化、错误报告、缩略图、显卡着色器缓存（DirectX、NVIDIA、AMD）、NVIDIA 驱动安装包、软件安装程序的临时文件（SquirrelTemp）、休眠文件、虚拟内存、Windows.old…… |
+| 系统 | 临时文件、Windows 更新缓存、传递优化、错误报告、缩略图、显卡着色器缓存（DirectX、NVIDIA、AMD）、NVIDIA 驱动安装包、软件安装程序的临时文件（SquirrelTemp）、休眠文件、虚拟内存（每块盘）、Windows.old…… |
 | 浏览器 | Chrome、Edge、Firefox、360 浏览器、QQ 浏览器的缓存；Google 更新程序缓存的安装包（只提示） |
-| 国内软件 | 微信（内置浏览器缓存、日志、更新包）、QQ、WeGame、腾讯应用宝、百度网盘、夸克网盘、网易云音乐（缓存、更新包）、剪映、扣子；聊天记录、剪映草稿、WPS 云文档、MuMu 共享文件夹只提示不清理 |
-| 应用和游戏 | VS Code、Adobe 媒体缓存、Steam 网页缓存、Electron 软件的网页缓存和下载的更新安装包；RAV / ReasonLabs 的数据只提示 |
+| 国内软件 | 微信（内置浏览器缓存、日志、更新包）、QQ、WeGame、腾讯应用宝、百度网盘、夸克网盘、夸克旧版本程序、QQ 音乐缓存、网易云音乐（缓存、更新包）、剪映、扣子；聊天记录、剪映草稿、WPS 云文档、MuMu 共享文件夹只提示不清理 |
+| 应用和游戏 | VS Code、Adobe 媒体缓存、Steam（网页缓存、每个游戏库的着色器缓存和没下载完的文件）、驱动精灵的驱动下载和备份、Electron 软件的网页缓存和下载的更新安装包；RAV / ReasonLabs 的数据、MuMu 模拟器的虚拟磁盘只提示 |
 | 开发工具 | npm、Yarn、pnpm、pip、uv、Conda、NuGet、Gradle、Maven、Go、Cargo、Playwright、Hugging Face |
 | 用户文件 | 回收站、下载的安装包、下载文件夹、桌面（后两项只提示） |
+
+**不只看系统盘**：很多软件装在 D 盘、E 盘这类自选位置，用 `%LOCALAPPDATA%` 这样的环境变量是找不到的。规则路径可以用下面的前缀开头，`diskslim -d D` 分析 D 盘时一样能找到可清理的内容：
+
+| 前缀 | 代表 | 例子 |
+|---|---|---|
+| `<drives>` | 每块本地硬盘的根目录 | `<drives>/BaiduNetdiskDownload` |
+| `<steam-libraries>` | Steam 的每个游戏库（读 `libraryfolders.vdf`） | `<steam-libraries>/steamapps/downloading` |
+| `<app:程序名.exe>` | 卸载信息里登记的、直接包含这个程序的安装目录 | `<app:quark.exe>/*.*.*.*` |
+
+找到的目录如果在安全防线的禁区里（例如装在 `C:\Program Files (x86)\Steam` 的 Steam），不参与规则：那里本来就不允许清理。
+
+`"oldVersionsOnly": true` 用于按版本号命名的程序文件夹（例如 `D:\Quark\7.1.7.975`）：只处理旧版本，**最新的版本和同一目录下程序（.exe）自己的版本都保留**——程序可能还没切换到新版本（夸克的 `quark.exe` 还是旧版、新版的 `new_quark.exe` 等下次启动才换上去时，最旧的那个反而正在用）。清空了的旧版本文件夹本身也会删除。
 
 软件缓存规则都带着进程名：软件在运行时整条跳过（例如微信后台的 WeChatAppEx 还开着时，不清理微信的缓存）。国内软件的目录会随版本变化，这些规则是按 2026 年 9 月的版本（微信 4.1、QQNT 等）在真实电脑上核对过的。
 
@@ -324,7 +336,7 @@ diskslim schedule disable
 
 - `risk` 必须明确填写；`action` 不写就是 `none`，工具只给建议。**清理工具不替规则作者做安全假设。**
 - `risk` 为 `high` 的规则不能设置 `action`；回收站（`::RecycleBin`）只能用 `empty-recycle-bin`。
-- `paths` 里可以用 `/` 或 `\\` 分隔；通配符可以出现在任意一级。
+- `paths` 里可以用 `/` 或 `\\` 分隔；通配符可以出现在任意一级；开头可以用上面的 `<drives>` 这类前缀，不认识的前缀会报错。
 - **具体的规则放前面，宽泛的规则放后面**：同一个路径只归属第一条命中它的规则。
 
 ## 项目结构

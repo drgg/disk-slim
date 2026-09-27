@@ -76,9 +76,16 @@ public sealed record CleanupRule
 
     /// <summary>
     /// 路径模板。支持环境变量（%LOCALAPPDATA%）、通配符（* 和 ?，可出现在任意一级）、/ 或 \ 分隔，
-    /// 以及特殊值 <c>::RecycleBin</c>（回收站）。
+    /// 开头的 <c>&lt;drives&gt;</c> 这类前缀（见 <see cref="PathTokens"/>），以及特殊值 <c>::RecycleBin</c>（回收站）。
     /// </summary>
     public required IReadOnlyList<string> Paths { get; init; }
+
+    /// <summary>
+    /// 路径命中的是按版本号命名的程序文件夹（例如 D:\Quark\7.1.7.975）时只处理旧版本：
+    /// 最新的版本、以及同一目录下的程序（.exe）自己的版本对应的文件夹都保留——程序可能还没切换到新版本。
+    /// 清空了的旧版本文件夹本身也会删除。
+    /// </summary>
+    public bool OldVersionsOnly { get; init; }
 
     /// <summary>必填：清理工具不能替规则作者假定一个风险等级。</summary>
     public required RiskLevel Risk { get; init; }

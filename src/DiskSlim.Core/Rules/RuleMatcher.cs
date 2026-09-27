@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace DiskSlim.Core.Rules;
 
 public sealed record ClaimedPath(string Path, bool IsFile);
@@ -13,7 +15,8 @@ public sealed record MatchedTarget(string Path, bool IsFile, IReadOnlyList<Claim
 /// 统计（<see cref="RuleEvaluator"/>）和清理（Cleaning）都通过它确定路径归属，
 /// 所以两边对“哪些文件属于哪条规则”的判断总是一致的。规则必须按规则文件中的顺序依次传入。
 /// </remarks>
-public sealed class RuleMatcher(string driveRoot)
+/// <param name="tokens">解析 <c>&lt;drives&gt;</c> 这类路径前缀；为 null 时按这台电脑的实际情况解析。</param>
+public sealed class RuleMatcher(string driveRoot, IPathTokenSource? tokens = null)
 {
     private readonly List<ClaimedPath> _claims = [];
 
@@ -27,7 +30,8 @@ public sealed class RuleMatcher(string driveRoot)
                 continue;
             }
 
-            foreach (var path in PathExpander.Expand(pattern))
+            var paths = PathExpander.Expand(pattern, tokens);
+            foreach (var path in rule.OldVersionsOnly ? OldVersions(paths) : paths)
             {
                 if (!PathExpander.IsSameOrInside(path, driveRoot) || _claims.Any(c => PathExpander.IsSameOrInside(path, c.Path)))
                 {
@@ -53,5 +57,81 @@ public sealed class RuleMatcher(string driveRoot)
         return inside
             .Where(p => !inside.Any(o => !o.IsFile && !ReferenceEquals(o, p) && PathExpander.IsSameOrInside(p.Path, o.Path)))
             .ToList();
+    }
+
+    /// <summary>
+    /// 从按版本号命名的文件夹里挑出旧版本：同一个上级目录里，最新的版本和上级目录中程序（.exe）自己的版本都保留。
+    /// </summary>
+    /// <remarks>
+    /// 例如 D:\Quark 里有 6.9.2.881、6.9.5.892、7.1.7.975 三个版本，quark.exe 是 6.9.2.881（新版本的 new_quark.exe 还没换上去），
+    /// 这时 6.9.2.881 正在用、7.1.7.975 是下次要用的，只有 6.9.5.892 是旧版本。名字不是版本号的文件夹一律不动。
+    /// </remarks>
+    internal static IEnumerable<string> OldVersions(IEnumerable<string> paths)
+    {
+        foreach (var folder in paths.Where(Directory.Exists).GroupBy(p => Path.GetDirectoryName(p) ?? "", StringComparer.OrdinalIgnoreCase))
+        {
+            var versioned = folder
+                .Select(path => (Path: path, Version: ParseVersion(Path.GetFileName(path))))
+                .Where(v => v.Version is not null)
+                .ToList();
+            if (versioned.Count < 2)
+            {
+                continue;
+            }
+
+            var keep = new HashSet<Version> { versioned.Max(v => v.Version)! };
+            keep.UnionWith(ProgramVersions(folder.Key));
+            foreach (var (path, version) in versioned)
+            {
+                if (!keep.Contains(version!))
+                {
+                    yield return path;
+                }
+            }
+        }
+    }
+
+    /// <summary>“7.1.7.975” 这样至少三段的版本号，统一补成四段；不是版本号时返回 null。</summary>
+    internal static Version? ParseVersion(string? text) =>
+        text is not null && text.Count(c => c == '.') >= 2 && Version.TryParse(text, out var version) ? Normalize(version) : null;
+
+    private static Version Normalize(Version v) => new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
+
+    /// <summary>目录里各个 .exe 的文件版本和产品版本。</summary>
+    private static HashSet<Version> ProgramVersions(string directory)
+    {
+        var versions = new HashSet<Version>();
+        try
+        {
+            foreach (var exe in Directory.EnumerateFiles(directory, "*.exe"))
+            {
+                var info = FileVersionInfo.GetVersionInfo(exe);
+                versions.Add(new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart));
+                if (ParseVersion(info.ProductVersion?.Split(' ')[0]) is { } product)
+                {
+                    versions.Add(product);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 读不到程序的版本时，只保留最新的版本会有风险：这个目录里的版本全部保留。
+            return AllVersions(directory);
+        }
+
+        return versions;
+    }
+
+    private static HashSet<Version> AllVersions(string directory)
+    {
+        try
+        {
+            return Directory.EnumerateDirectories(directory).Select(d => ParseVersion(Path.GetFileName(d))).OfType<Version>().ToHashSet();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 连目录都读不了，也就找不到要处理的旧版本。
+            return [];
+        }
     }
 }

@@ -82,6 +82,19 @@ public static class RuleLoader
                 problems.Add($"{label}：minAgeDays 不能是负数");
             }
 
+            foreach (var path in rule.Paths.Where(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                if (PathTokens.TrySplit(path, out var token, out _) && !PathTokens.IsKnown(token))
+                {
+                    problems.Add($"{label}：不认识路径前缀 <{token}>（可以用 <drives>、<steam-libraries>、<app:程序名.exe>）");
+                }
+            }
+
+            if (rule.OldVersionsOnly && rule.Paths.Any(p => PathExpander.IsSpecial(p) || !LastSegment(p).AsSpan().ContainsAny('*', '?')))
+            {
+                problems.Add($"{label}：oldVersionsOnly 要求每个路径的最后一级是通配符（例如 <app:quark.exe>/*.*.*.*）");
+            }
+
             if (!Enum.IsDefined(rule.Risk))
             {
                 problems.Add($"{label}：risk 只能是 low、medium 或 high");
@@ -114,4 +127,7 @@ public static class RuleLoader
 
         return problems;
     }
+
+    private static string LastSegment(string path) =>
+        path.Trim().TrimEnd('/', '\\').Split('/', '\\')[^1];
 }
