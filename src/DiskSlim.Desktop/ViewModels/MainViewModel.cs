@@ -43,6 +43,7 @@ public sealed class MainViewModel : ObservableObject
         IsElevated = SystemInfo.IsElevated();
         Duplicates = new DuplicatesViewModel(rules);
         Duplicates.QuarantineChanged += (_, _) => Quarantine.Refresh();
+        Archives.QuarantineChanged += (_, _) => Quarantine.Refresh();
         foreach (var drive in DriveOption.Available(SystemInfo.SystemDriveRoot))
         {
             Drives.Add(drive);
@@ -76,6 +77,8 @@ public sealed class MainViewModel : ObservableObject
     public QuarantineViewModel Quarantine { get; } = new();
 
     public DuplicatesViewModel Duplicates { get; }
+
+    public ArchivesViewModel Archives { get; } = new();
 
     public SystemTasksViewModel SystemTasks { get; } = new();
 

@@ -38,6 +38,13 @@ public partial class MainWindow : Window
             var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择要查找重复文件的位置", InitialDirectory = Directory.Exists(initial) ? initial : "" };
             return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
         };
+        viewModel.Archives.Confirm = question =>
+            MessageBox.Show(this, question, "移入隔离区", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+        viewModel.Archives.PickFolder = initial =>
+        {
+            var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "选择要查找压缩包的位置", InitialDirectory = Directory.Exists(initial) ? initial : "" };
+            return dialog.ShowDialog(this) == true ? dialog.FolderName : null;
+        };
         Treemap.TileClicked += (_, e) =>
         {
             if (e.Tile is { Kind: TileKind.Directory, Node: { } node })
@@ -72,7 +79,10 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 系统清理，5 = 隔离区，6 = 空间变化，7 = 定时清理）。</summary>
+    /// <summary>
+    /// 切换到指定标签页（0 = 可清理项目，1 = 空间分布，2 = 最大的文件，3 = 重复文件，4 = 已解压的压缩包，
+    /// 5 = 系统清理，6 = 隔离区，7 = 空间变化，8 = 定时清理）。
+    /// </summary>
     public void SelectTab(int index) => Tabs.SelectedIndex = index;
 
     private async void OnCleanupRequested(object? sender, CleanupViewModel cleanup)
@@ -132,6 +142,23 @@ public partial class MainWindow : Window
         if (sender is FrameworkElement { DataContext: DuplicateFileViewModel file })
         {
             ShowInExplorer(file.Path);
+        }
+    }
+
+    private void OnArchiveShowInExplorer(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ArchiveItemViewModel item })
+        {
+            ShowInExplorer(item.Path);
+        }
+    }
+
+    private void OnArchiveOpenExtracted(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: ArchiveItemViewModel item } && Directory.Exists(item.Archive.ExtractedTo))
+        {
+            // 只打开文件夹，不做任何修改。
+            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{item.Archive.ExtractedTo}\"") { UseShellExecute = true });
         }
     }
 

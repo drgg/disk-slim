@@ -75,10 +75,15 @@ internal static class Screenshot
         }
         else if (options.Tab == 4)
         {
+            // 已解压的压缩包页：查找一次（只读）。
+            await window.ViewModel.Archives.SearchAsync();
+        }
+        else if (options.Tab == 5)
+        {
             // 系统清理页：等估算完成（只读，不会运行任何任务）。
             await window.ViewModel.SystemTasks.RefreshEstimatesAsync();
         }
-        else if (options.Tab == 7)
+        else if (options.Tab == 8)
         {
             // 定时清理页：读取状态（只查询，不会开启或修改任务）。
             await window.ViewModel.Schedule.RefreshAsync();

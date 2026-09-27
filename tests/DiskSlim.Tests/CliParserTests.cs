@@ -154,6 +154,34 @@ public sealed class CliParserTests
         Assert.NotNull(CliParser.Parse(args).Error);
     }
 
+    [Fact]
+    public void Parses_the_archives_command_and_purge_now()
+    {
+        var archives = CliParser.Parse(["archives", @"D:\BaiduNetdiskDownload", "--min-size", "100MB", "--remove", "--purge-now", "-n", "30"]).Options!;
+        var clean = CliParser.Parse(["clean", "--rule", "nvidia-driver-installers", "--purge-now", "--execute", "-y"]).Options!;
+
+        Assert.Equal(CliCommand.Archives, archives.Command);
+        Assert.Equal([@"D:\BaiduNetdiskDownload"], archives.DupesRoots);
+        Assert.Equal(100L << 20, archives.MinSize);
+        Assert.True(archives.RemoveDuplicates);
+        Assert.True(archives.PurgeNow);
+        Assert.Equal(30, archives.Top);
+        Assert.True(clean.PurgeNow);
+        Assert.Empty(CliParser.Parse(["archives"]).Options!.DupesRoots); // 不指定时用默认位置
+    }
+
+    [Theory]
+    [InlineData("archives", "--execute")]               // 必须和 --remove 一起用
+    [InlineData("archives", "--purge-now")]             // 同上
+    [InlineData("dupes", "--purge-now")]
+    [InlineData("scan", "--purge-now")]                 // 只能用于 clean、dupes、archives
+    [InlineData("quarantine", "purge", "--all", "--purge-now")]
+    [InlineData("archives", "--rule", "x")]
+    public void Rejects_invalid_archives_and_purge_now_arguments(params string[] args)
+    {
+        Assert.NotNull(CliParser.Parse(args).Error);
+    }
+
     [Theory]
     [InlineData("4096", 4096L)]
     [InlineData("500KB", 500L * 1024)]

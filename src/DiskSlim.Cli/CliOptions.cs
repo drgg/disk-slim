@@ -13,6 +13,7 @@ internal enum CliCommand
     System,
     Growth,
     Schedule,
+    Archives,
 }
 
 internal enum ScheduleVerb
@@ -75,7 +76,7 @@ internal sealed record CliOptions
 
     public string? LogPath { get; init; }
 
-    /// <summary>clean、dupes：移入隔离区后立即彻底删除，马上释放空间（不能撤销）。</summary>
+    /// <summary>clean、dupes、archives：移入隔离区后立即彻底删除，马上释放空间（不能撤销）。</summary>
     public bool PurgeNow { get; init; }
 
     // ───── quarantine ─────
@@ -90,15 +91,18 @@ internal sealed record CliOptions
     /// <summary>quarantine --expired：多少天算到期；growth：和多少天前比较。两者默认都是 7。</summary>
     public int Days { get; init; } = 7;
 
-    // ───── dupes ─────
+    // ───── dupes / archives ─────
 
-    /// <summary>在这些目录里查找重复文件；为空时查用户目录。</summary>
+    /// <summary>dupes、archives：在这些目录里查找；为空时用各命令的默认位置。</summary>
     public IReadOnlyList<string> DupesRoots { get; init; } = [];
 
-    /// <summary>dupes：只查不小于这个大小的文件；growth：只列出变化不小于这个大小的位置。为 null 时用各命令的默认值。</summary>
+    /// <summary>
+    /// dupes：只查不小于这个大小的文件；archives：只查不小于这个大小的压缩包；growth：只列出变化不小于这个大小的位置。
+    /// 为 null 时用各命令的默认值。
+    /// </summary>
     public long? MinSize { get; init; }
 
-    /// <summary>把建议移除的副本移入隔离区（配合 --execute）。</summary>
+    /// <summary>dupes：把建议移除的副本移入隔离区；archives：把确认解压过的压缩包移入隔离区（都要配合 --execute）。</summary>
     public bool RemoveDuplicates { get; init; }
 
     // ───── system ─────
@@ -142,6 +146,8 @@ internal static class CliParser
           diskslim quarantine purge --all         彻底删除隔离区中的全部内容
           diskslim dupes [路径...]                查找重复文件（默认查用户目录），只读
           diskslim dupes [路径...] --remove       把建议移除的副本移入隔离区（默认只模拟，加 --execute 执行）
+          diskslim archives [路径...]             找出已经解压过的压缩包（默认查下载文件夹、桌面和网盘下载目录），只读
+          diskslim archives [路径...] --remove    把确认解压过的压缩包移入隔离区（默认只模拟，加 --execute 执行）
           diskslim system                         列出系统级清理任务（DISM、更新缓存、休眠文件……）
           diskslim system run <任务>              说明任务会做什么；加 --execute 执行（需要管理员权限，会弹出 UAC）
           diskslim growth                         空间变化：和 7 天前的扫描比较，找出空间涨在哪里
@@ -176,13 +182,19 @@ internal static class CliParser
           -y, --yes             执行前不再询问确认
               --log <文件>      操作日志的保存位置，默认 %LOCALAPPDATA%\DiskSlim\logs
               --purge-now       移入隔离区的内容在清理后立即彻底删除，马上释放空间（不能撤销）。
-                                磁盘快满、等不了 7 天时用；dupes --remove 也可以用
+                                磁盘快满、等不了 7 天时用；dupes --remove 和 archives --remove 也可以用
 
         dupes 选项：
               --min-size <大小>  只查不小于这个大小的文件，默认 1MB（例如 500KB、10MB、1GB）
               --remove          移除建议的副本：每组保留最早创建的一份，其余移入隔离区；
                                 组里有聊天记录等受保护的文件时整组不动
           -n, --top <数量>      显示多少组，默认 15
+
+        archives 选项：
+              --min-size <大小>  只查不小于这个大小的压缩包，默认 50MB
+              --remove          只移除逐个文件核对过的 zip（每个文件都已解压出来、大小和时间一致）；
+                                rar、7z 读不出文件列表，只列出不移除
+          -n, --top <数量>      显示多少个，默认 15
 
         growth 选项：
               --days <天数>     和多少天前的扫描比较，默认 7；记录没有那么早时和最早的一次比较
@@ -215,8 +227,8 @@ internal static class CliParser
     /// <summary>只能用于特定命令的选项；不在表里的选项所有命令都能用。</summary>
     private static readonly Dictionary<string, CliCommand[]> CommandSpecific = new(StringComparer.Ordinal)
     {
-        ["-n"] = [CliCommand.Scan, CliCommand.Dupes, CliCommand.Growth],
-        ["--top"] = [CliCommand.Scan, CliCommand.Dupes, CliCommand.Growth],
+        ["-n"] = [CliCommand.Scan, CliCommand.Dupes, CliCommand.Growth, CliCommand.Archives],
+        ["--top"] = [CliCommand.Scan, CliCommand.Dupes, CliCommand.Growth, CliCommand.Archives],
         ["--json"] = [CliCommand.Scan],
         ["--md"] = [CliCommand.Scan],
         ["--rules-only"] = [CliCommand.Scan],
@@ -224,11 +236,11 @@ internal static class CliParser
         ["--list-rules"] = [CliCommand.Scan],
         ["--no-history"] = [CliCommand.Scan],
         ["--rule"] = [CliCommand.Clean],
-        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System],
-        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
-        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
-        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule],
-        ["--purge-now"] = [CliCommand.Clean, CliCommand.Dupes],
+        ["--log"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Archives],
+        ["--execute"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule, CliCommand.Archives],
+        ["-y"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule, CliCommand.Archives],
+        ["--yes"] = [CliCommand.Clean, CliCommand.Quarantine, CliCommand.Dupes, CliCommand.System, CliCommand.Schedule, CliCommand.Archives],
+        ["--purge-now"] = [CliCommand.Clean, CliCommand.Dupes, CliCommand.Archives],
         ["--daily"] = [CliCommand.Schedule],
         ["--weekly"] = [CliCommand.Schedule],
         ["--at"] = [CliCommand.Schedule],
@@ -236,15 +248,15 @@ internal static class CliParser
         ["--expired"] = [CliCommand.Quarantine],
         ["--all"] = [CliCommand.Quarantine],
         ["--days"] = [CliCommand.Quarantine, CliCommand.Growth],
-        ["--min-size"] = [CliCommand.Dupes, CliCommand.Growth],
-        ["--remove"] = [CliCommand.Dupes],
+        ["--min-size"] = [CliCommand.Dupes, CliCommand.Growth, CliCommand.Archives],
+        ["--remove"] = [CliCommand.Dupes, CliCommand.Archives],
     };
 
     public static ParseResult Parse(IReadOnlyList<string> args)
     {
         var options = new CliOptions();
         var start = 0;
-        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system" or "growth" or "schedule")
+        if (args.Count > 0 && args[0] is "scan" or "clean" or "quarantine" or "dupes" or "system" or "growth" or "schedule" or "archives")
         {
             options = options with
             {
@@ -256,6 +268,7 @@ internal static class CliParser
                     "system" => CliCommand.System,
                     "growth" => CliCommand.Growth,
                     "schedule" => CliCommand.Schedule,
+                    "archives" => CliCommand.Archives,
                     _ => CliCommand.Scan,
                 },
             };
@@ -281,7 +294,7 @@ internal static class CliParser
                 return Fail($"{arg} 只能用于 {string.Join(" 或 ", allowed.Select(c => "diskslim " + c.ToString().ToLowerInvariant()))}");
             }
 
-            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System or CliCommand.Growth or CliCommand.Schedule && !arg.StartsWith('-') && arg != "/?")
+            if (options.Command is CliCommand.Quarantine or CliCommand.Dupes or CliCommand.System or CliCommand.Growth or CliCommand.Schedule or CliCommand.Archives && !arg.StartsWith('-') && arg != "/?")
             {
                 positionals.Add(arg);
                 continue;
@@ -533,11 +546,12 @@ internal static class CliParser
             options = parsedQuarantine.Options!;
         }
 
-        if (options.Command == CliCommand.Dupes)
+        if (options.Command is CliCommand.Dupes or CliCommand.Archives)
         {
+            var name = options.Command == CliCommand.Dupes ? "dupes" : "archives";
             if (options.Execute && !options.RemoveDuplicates)
             {
-                return Fail("--execute 需要和 --remove 一起使用（dupes 默认只查找，不移动任何文件）");
+                return Fail($"--execute 需要和 --remove 一起使用（{name} 默认只查找，不移动任何文件）");
             }
 
             if (options.PurgeNow && !options.RemoveDuplicates)

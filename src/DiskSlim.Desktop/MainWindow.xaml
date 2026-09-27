@@ -380,6 +380,92 @@
                 </Grid>
             </TabItem>
 
+            <!-- ───── 已解压的压缩包 ───── -->
+            <TabItem Header="已解压的压缩包" DataContext="{Binding Archives}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Margin="20,14,20,10">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <TextBlock Text="不小于" VerticalAlignment="Center" Margin="12,0,6,0" Foreground="{StaticResource SubtleTextBrush}" />
+                                <ComboBox ItemsSource="{Binding MinSizes}" SelectedItem="{Binding MinSize}" DisplayMemberPath="Label" Width="90" Height="32" VerticalContentAlignment="Center" />
+                                <Button Content="开始查找" Style="{StaticResource PrimaryButton}" Command="{Binding SearchCommand}" Margin="8,0,0,0" />
+                                <Button Content="取消" Command="{Binding CancelCommand}" Margin="8,0,0,0"
+                                        Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                            <TextBlock Text="查找位置" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{StaticResource SubtleTextBrush}" />
+                            <Button DockPanel.Dock="Right" Content="浏览…" Command="{Binding BrowseCommand}" Margin="8,0,0,0" />
+                            <TextBox Text="{Binding RootPath, UpdateSourceTrigger=PropertyChanged}" Height="32" VerticalContentAlignment="Center" Padding="6,0"
+                                     ToolTip="留空时查找下载文件夹、桌面，以及每块硬盘上的 BaiduNetdiskDownload、迅雷下载等下载目录" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        <TextBlock Foreground="{StaticResource SubtleTextBrush}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"
+                                   Text="压缩包旁边已经有解压出来的文件时，压缩包本身就可以删了。zip 会逐个核对里面的文件（不用解压、不用密码），全部对上的默认勾选；rar、7z 读不出文件列表，只看旁边有没有同名文件夹，需要你自己确认后勾选；没解压完的不能勾选。勾选的压缩包会移入隔离区，可以恢复，解压出来的文件不受影响。" />
+                        <ProgressBar IsIndeterminate="True" Height="4" Margin="0,10,0,4" Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Text="{Binding ProgressText}" Foreground="{StaticResource SubtleTextBrush}" Visibility="{Binding IsSearching, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,0,20,8">
+                        <ItemsControl ItemsSource="{Binding Items}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ArchiveItemViewModel}">
+                                    <Border Style="{StaticResource Card}" Margin="0,0,0,8" Padding="14,10" ToolTip="{Binding Path}">
+                                        <Border.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="在资源管理器中显示压缩包" Click="OnArchiveShowInExplorer" />
+                                                <MenuItem Header="打开解压出来的文件夹" Click="OnArchiveOpenExtracted" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding CanSelect}" VerticalAlignment="Top" Margin="0,2,8,0"
+                                                      ToolTip="勾选 = 移入隔离区" />
+                                            <Border Grid.Column="1" Background="{StaticResource ChipBrush}" CornerRadius="4" Padding="6,1" Margin="0,0,8,0" VerticalAlignment="Top">
+                                                <TextBlock Text="{Binding Tag}" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding EvidenceText}" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding ExtractedToText}" FontSize="12" Foreground="{StaticResource SubtleTextBrush}" Margin="0,1,0,0" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="3" Text="{Binding SizeText}" FontSize="15" FontWeight="SemiBold" Margin="12,0,0,0" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="20,12">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <CheckBox Content="移入后立即彻底删除" IsChecked="{Binding PurgeAfterRemove}" VerticalAlignment="Center" Margin="0,0,12,0"
+                                          ToolTip="磁盘快满时使用：马上释放空间，但不能再从隔离区恢复" />
+                                <Button Content="只勾选核对过的" Command="{Binding SelectSuggestedCommand}" Margin="0,0,8,0" />
+                                <Button Content="全部取消" Command="{Binding ClearSelectionCommand}" Margin="0,0,8,0" />
+                                <Button Content="移入隔离区…" Style="{StaticResource DangerButton}" Command="{Binding RemoveCommand}" Padding="18,8" />
+                            </StackPanel>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectionText}" FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding LowSpaceWarning}" Foreground="{StaticResource WarningBrush}" FontSize="12" TextWrapping="Wrap"
+                                           Visibility="{Binding HasLowSpaceWarning, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Text="{Binding Message}" Foreground="#2E7D32" FontSize="12" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
             <!-- ───── 系统清理 ───── -->
             <TabItem Header="系统清理" DataContext="{Binding SystemTasks}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20,14">

@@ -806,6 +806,14 @@
       "advice": "软件装好后，安装包一般就不需要了。确认后手动删除。"
     },
     {
+      "id": "netdisk-downloads",
+      "name": "网盘和下载工具的下载文件夹",
+      "category": "用户文件",
+      "paths": ["<drives>/BaiduNetdiskDownload", "<drives>/迅雷下载"],
+      "risk": "high",
+      "advice": "百度网盘、迅雷默认的下载位置，都是你下载的个人文件，请手动整理。已经解压过的压缩包可以用 diskslim archives（图形界面的“已解压的压缩包”页面）找出来。"
+    },
+    {
       "id": "downloads",
       "name": "下载文件夹（其他文件）",
       "category": "用户文件",

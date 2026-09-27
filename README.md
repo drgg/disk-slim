@@ -42,6 +42,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
   - 右侧列出当前目录的子项和各自的可清理空间；右键可以在资源管理器中显示。
 - **最大的文件**：最大的 50 个文件。
 - **重复文件**：选择位置和最小文件大小后查找，勾选的副本移入隔离区（见下文）。
+- **已解压的压缩包**：找出旁边已经有解压出来的文件的压缩包（默认查下载文件夹、桌面和各盘的网盘下载目录），逐个核对过的 zip 默认勾选，移入隔离区（见下文）。
 - **系统清理**：DISM 组件存储、Windows 更新缓存、传递优化缓存、休眠文件（精简或关闭）、压缩系统文件，点“运行”后弹出 UAC 提示（见下文）。
 - **隔离区**：查看、恢复或彻底删除之前移入隔离区的内容，包括旧版工具留在磁盘根目录 `.diskslim-quarantine` 里的批次。
 - **空间变化**：已用空间的趋势图，以及和之前某次扫描相比，空间涨在哪里、减在哪里（见下文）。
@@ -59,7 +60,7 @@ dotnet publish src/DiskSlim.Cli -c Release -r win-x64 -p:SelfContained=false -p:
 DiskSlimApp.exe --screenshot main.png --tab 1 --navigate "C:\Users" --cleanup-dialog dialog.png
 ```
 
-`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 系统清理（只估算，不运行），5 隔离区，6 空间变化（截图模式不保存快照），7 定时清理（只读取状态）；`--size 1280x820` 设置窗口大小。
+`--tab`：0 可清理项目，1 空间分布，2 最大的文件，3 重复文件（会自动查找一次，只读），4 已解压的压缩包（会自动查找一次，只读），5 系统清理（只估算，不运行），6 隔离区，7 空间变化（截图模式不保存快照），8 定时清理（只读取状态）；`--size 1280x820` 设置窗口大小。
 
 ## 命令行：查看报告 `diskslim scan`
 
@@ -96,7 +97,7 @@ diskslim clean --rule recycle-bin,nuget-packages --execute
 
 ### 磁盘快满时
 
-“移入隔离区”和“移到回收站”都还占着空间。剩余空间少于容量的 10%（大硬盘最多按 20 GB 算）时，模拟结果会单独提醒这一点。等不了 7 天时，可以加 `--purge-now`：这次移入隔离区的内容在清理后立即彻底删除，马上释放空间，但**不能再撤销**。`dupes --remove` 也可以用。
+“移入隔离区”和“移到回收站”都还占着空间。剩余空间少于容量的 10%（大硬盘最多按 20 GB 算）时，模拟结果会单独提醒这一点。等不了 7 天时，可以加 `--purge-now`：这次移入隔离区的内容在清理后立即彻底删除，马上释放空间，但**不能再撤销**。`dupes --remove` 和 `archives --remove` 也可以用。
 
 ```bash
 diskslim clean --rule nvidia-driver-installers,electron-updater-cache --purge-now --execute
@@ -197,6 +198,28 @@ diskslim dupes --remove --execute
 - **只建议移除明显的副本**：文件名带“(1)”“副本”“- Copy”，或在下载文件夹里。其他重复文件（例如项目里被引用的资源）只列出，由你自己判断——图形界面里可以手动勾选。
 - **移除 = 移入隔离区**，可以恢复。每组至少保留一份；保留的那份在扫描后被改过或删除时整组不动；要移除的文件在扫描后被改过也不动。
 
+## 已经解压过的压缩包：`diskslim archives`
+
+从网盘下载的游戏、软件解压以后，压缩包本身往往还留着，一份占两份空间。
+
+```bash
+diskslim archives
+```
+
+```bash
+diskslim archives D:\BaiduNetdiskDownload --min-size 200MB
+```
+
+```bash
+diskslim archives --remove --execute
+```
+
+- **默认查的位置**：下载文件夹、桌面，以及每块本地硬盘上的 `BaiduNetdiskDownload`、`迅雷下载`、`Downloads`、`下载`。只查不小于 50 MB 的压缩包，不进入 AppData、ProgramData 和安全防线里的禁区。
+- **zip 逐个核对**：读出压缩包里的文件列表（不用解压，有密码的也能读），在旁边的同名文件夹（或压缩包所在的文件夹）里逐个找：每个文件都在、大小和修改时间都一致，才标为 **[可移除]**。压缩包里只有一个顶层文件夹、解压时被去掉了这一层的，也能认出来。光看大小不够：没打上的补丁包里的文件可能和原来的文件一样大。
+- **rar、7z 只按名字判断**：读不出文件列表，只看旁边有没有同名、而且不比压缩包小的文件夹，标为 **[请确认]**，不会自动移除（图形界面里可以自己勾选）。同名文件夹比压缩包小很多、或者 zip 只找到一部分文件的，标为 **[不完整]**，不能移除。
+- **分卷压缩包**（`.part1.rar`、`.7z.001`、`.z01`……）作为一个整体，所有分卷一起移动；缺了第一卷的分卷不算。
+- **移除 = 移入隔离区**，可以恢复，解压出来的文件不受影响。解压出来的文件夹已经不在、或者压缩包在查找之后被改过时不移动。
+
 ## 系统级清理：`diskslim system`
 
 ```bash
@@ -288,7 +311,7 @@ diskslim schedule disable
 
 ## 规则文件
 
-内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 73 条，其中 50 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
+内置规则在 [src/DiskSlim.Core/Rules/default-rules.json](src/DiskSlim.Core/Rules/default-rules.json)，共 74 条，其中 50 条可以自动清理。可以用 `--rules my-rules.json` 换成自己的规则。
 
 覆盖的内容：
 
@@ -299,7 +322,7 @@ diskslim schedule disable
 | 国内软件 | 微信（内置浏览器缓存、日志、更新包）、QQ、WeGame、腾讯应用宝、百度网盘、夸克网盘、夸克旧版本程序、QQ 音乐缓存、网易云音乐（缓存、更新包）、剪映、扣子；聊天记录、剪映草稿、WPS 云文档、MuMu 共享文件夹只提示不清理 |
 | 应用和游戏 | VS Code、Adobe 媒体缓存、Steam（网页缓存、每个游戏库的着色器缓存和没下载完的文件）、驱动精灵的驱动下载和备份、Electron 软件的网页缓存和下载的更新安装包；RAV / ReasonLabs 的数据、MuMu 模拟器的虚拟磁盘只提示 |
 | 开发工具 | npm、Yarn、pnpm、pip、uv、Conda、NuGet、Gradle、Maven、Go、Cargo、Playwright、Hugging Face |
-| 用户文件 | 回收站、下载的安装包、下载文件夹、桌面（后两项只提示） |
+| 用户文件 | 回收站、下载的安装包、下载文件夹、网盘和下载工具的下载文件夹（每块盘）、桌面（后三项只提示） |
 
 **不只看系统盘**：很多软件装在 D 盘、E 盘这类自选位置，用 `%LOCALAPPDATA%` 这样的环境变量是找不到的。规则路径可以用下面的前缀开头，`diskslim -d D` 分析 D 盘时一样能找到可清理的内容：
 

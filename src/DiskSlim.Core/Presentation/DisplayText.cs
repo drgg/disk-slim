@@ -226,6 +226,25 @@ public static class DisplayText
         return parts.Count == 0 ? null : "另有 " + string.Join("，", parts) + "。";
     }
 
+    // ───── 已经解压过的压缩包 ─────
+
+    /// <summary>判断依据的简短标签。</summary>
+    public static string ArchiveTag(Archives.ExtractionEvidence evidence) => evidence switch
+    {
+        Archives.ExtractionEvidence.Verified => "可移除",
+        Archives.ExtractionEvidence.SameNameFolder => "请确认",
+        _ => "不完整",
+    };
+
+    /// <summary>为什么认为这个压缩包已经解压过（或者为什么不建议删）。</summary>
+    public static string ArchiveEvidence(Archives.ExtractedArchive archive) => archive.Evidence switch
+    {
+        Archives.ExtractionEvidence.Verified => $"{archive.EntryCount:N0} 个文件全部已经解压出来（大小和修改时间一致）",
+        Archives.ExtractionEvidence.SameNameFolder => $"旁边有同名文件夹（{ByteSize.Format(archive.ExtractedBytes)}），但读不出压缩包里的文件列表，没有逐个核对",
+        _ when archive.EntryCount > 0 => $"只找到 {archive.MatchedEntries:N0} / {archive.EntryCount:N0} 个文件，可能没解压完或解压后改过",
+        _ => $"同名文件夹只有 {ByteSize.Format(archive.ExtractedBytes)}，比压缩包小很多，可能没解压完",
+    };
+
     /// <summary>一批隔离内容有多少项：新版都是文件，旧版工具的一项可能是整个文件夹。</summary>
     public static string QuarantineCount(Quarantine.QuarantineSession session) =>
         session.Items.Any(i => i.IsDirectory) ? $"{session.Items.Count:N0} 项" : $"{session.Items.Count:N0} 个文件";
