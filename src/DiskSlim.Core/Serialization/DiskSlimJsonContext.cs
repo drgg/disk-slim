@@ -17,6 +17,7 @@ namespace DiskSlim.Core.Serialization;
 [JsonSerializable(typeof(Cleaning.LogEntry))]
 [JsonSerializable(typeof(Quarantine.QuarantineRecord))]
 [JsonSerializable(typeof(Quarantine.QuarantineSessionInfo))]
+[JsonSerializable(typeof(Quarantine.LegacyManifest))]
 [JsonSerializable(typeof(SystemTasks.SystemTaskResult))]
 [JsonSerializable(typeof(History.SpaceSnapshot))]
 [JsonSerializable(typeof(History.SnapshotSummary))]

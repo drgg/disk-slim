@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using DiskSlim.Core.Cleaning;
 using DiskSlim.Core.Formatting;
+using DiskSlim.Core.Presentation;
 using DiskSlim.Core.Quarantine;
 
 namespace DiskSlim.Desktop.ViewModels;
@@ -19,8 +20,9 @@ public sealed record QuarantineSessionViewModel(QuarantineSession Session)
 
     public bool IsExpired => AgeDays >= ExpiryDays;
 
-    public string DetailText => $"{Session.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm} 移入 · {Session.Items.Count:N0} 个文件 · "
-        + (AgeDays < 1 ? "今天" : $"已放 {AgeDays:0} 天") + (IsExpired ? "，可以彻底删除了" : "");
+    public string DetailText => $"{Session.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm} 移入 · {DisplayText.QuarantineCount(Session)} · "
+        + (AgeDays < 1 ? "今天" : $"已放 {AgeDays:0} 天") + (IsExpired ? "，可以彻底删除了" : "")
+        + (Session.IsLegacy ? $" · 旧版工具的隔离区（{System.IO.Path.GetDirectoryName(Session.Directory)}）" : "");
 }
 
 /// <summary>“隔离区”页面：查看、恢复、彻底删除。</summary>
@@ -88,8 +90,9 @@ public sealed class QuarantineViewModel : ObservableObject
         }
 
         var result = _store.Restore(item.Session, SafetyGuard.ForCurrentUser());
-        Message = $"已恢复 {result.Restored:N0} 个文件（{ByteSize.Format(result.RestoredBytes)}）到原来的位置。"
-            + (result.Problems.Count > 0 ? $"{result.Problems.Count:N0} 个没有恢复（原位置已有同名文件等），仍在隔离区中。" : "");
+        var unit = item.Session.IsLegacy ? "项" : "个文件";
+        Message = $"已恢复 {result.Restored:N0} {unit}（{ByteSize.Format(result.RestoredBytes)}）到原来的位置。"
+            + (result.Problems.Count > 0 ? $"{result.Problems.Count:N0} {unit}没有恢复（原位置已有同名文件等），仍在隔离区中。" : "");
         Refresh();
     }
 
@@ -100,7 +103,7 @@ public sealed class QuarantineViewModel : ObservableObject
             return;
         }
 
-        var question = $"彻底删除这一批（{item.Session.Items.Count:N0} 个文件，{item.SizeText}）？\n\n{item.Description}\n\n删除后无法恢复。";
+        var question = $"彻底删除这一批（{DisplayText.QuarantineCount(item.Session)}，{item.SizeText}）？\n\n{item.Description}\n\n删除后无法恢复。";
         if (ConfirmPurge is { } confirm && !confirm(question))
         {
             return;

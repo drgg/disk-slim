@@ -186,6 +186,10 @@ public static class DisplayText
         return parts.Count == 0 ? null : "另有 " + string.Join("，", parts) + "。";
     }
 
+    /// <summary>一批隔离内容有多少项：新版都是文件，旧版工具的一项可能是整个文件夹。</summary>
+    public static string QuarantineCount(Quarantine.QuarantineSession session) =>
+        session.Items.Any(i => i.IsDirectory) ? $"{session.Items.Count:N0} 项" : $"{session.Items.Count:N0} 个文件";
+
     /// <summary>磁盘剩余空间的变化。</summary>
     public static string FreeSpaceChange(CleanupResult result)
     {

@@ -36,12 +36,19 @@ public sealed record QuarantineSessionInfo
     public string Description { get; init => field = value ?? ""; } = "";
 }
 
-public sealed record QuarantineItem(int Index, string OriginalPath, string StoredPath, long Bytes, string? Rule);
+public sealed record QuarantineItem(int Index, string OriginalPath, string StoredPath, long Bytes, string? Rule)
+{
+    /// <summary>这一项是整个文件夹（只有旧版工具的批次里会有）。</summary>
+    public bool IsDirectory { get; init; }
+}
 
 /// <summary>隔离区中的一批文件（一次清理产生一批）。</summary>
 public sealed record QuarantineSession(string Id, string Directory, DateTimeOffset CreatedAt, string Description, IReadOnlyList<QuarantineItem> Items)
 {
     public long TotalBytes => Items.Sum(i => i.Bytes);
+
+    /// <summary>旧版（脚本版）工具留下的批次，位于磁盘根目录的 <c>.diskslim-quarantine</c> 里。</summary>
+    public bool IsLegacy { get; init; }
 }
 
 public sealed record QuarantineProblem(string Path, string Reason);
@@ -56,6 +63,7 @@ public sealed record PurgeResult(int Purged, long PurgedBytes, IReadOnlyList<Qua
 /// <remarks>
 /// 每批文件一个目录：<c>session.json</c> 记录时间和说明，<c>manifest.jsonl</c> 记录每个文件原来的位置。
 /// 清单先写“准备移入”再移动文件，程序中途崩溃也不会丢失原始位置。
+/// 旧版（脚本版）工具留在磁盘根目录 <c>.diskslim-quarantine</c> 里的批次也一并列出，可以同样恢复和彻底删除。
 /// </remarks>
 public sealed class QuarantineStore
 {
@@ -69,17 +77,26 @@ public sealed class QuarantineStore
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public QuarantineStore(string root)
+    /// <param name="legacyRoot">旧版工具的隔离区；为 null 时不读取。</param>
+    public QuarantineStore(string root, string? legacyRoot = null)
     {
         Root = Path.GetFullPath(root);
+        LegacyRoot = legacyRoot is null ? null : Path.GetFullPath(legacyRoot);
     }
 
     public string Root { get; }
 
+    /// <summary>旧版工具的隔离区（例如 <c>C:\.diskslim-quarantine</c>）；只读取和清空，不再往里放新文件。</summary>
+    public string? LegacyRoot { get; }
+
     /// <summary>
     /// 指定磁盘上的隔离区。必须和被清理的文件在同一块盘上，移入才是瞬间完成的改名而不是复制。
     /// </summary>
-    public static QuarantineStore ForDrive(string driveRoot) => new(DefaultRoot(driveRoot));
+    public static QuarantineStore ForDrive(string driveRoot) => new(DefaultRoot(driveRoot), LegacyRootFor(driveRoot));
+
+    /// <summary>旧版（脚本版）工具在磁盘根目录下的隔离区。</summary>
+    public static string LegacyRootFor(string driveRoot) =>
+        Path.Join(Path.GetPathRoot(Path.GetFullPath(driveRoot)), LegacyQuarantine.DirectoryName);
 
     public static string DefaultRoot(string driveRoot)
     {
@@ -96,15 +113,18 @@ public sealed class QuarantineStore
     /// <summary>列出隔离区中的所有批次（按时间从新到旧），已经全部恢复或为空的批次不列出。</summary>
     public IReadOnlyList<QuarantineSession> ListSessions()
     {
-        if (!Directory.Exists(Root))
-        {
-            return [];
-        }
-
         var sessions = new List<QuarantineSession>();
-        foreach (var directory in Directory.EnumerateDirectories(Root))
+        foreach (var directory in SessionDirectories(Root))
         {
             if (Load(directory) is { Items.Count: > 0 } session)
+            {
+                sessions.Add(session);
+            }
+        }
+
+        foreach (var directory in SessionDirectories(LegacyRoot))
+        {
+            if (LegacyQuarantine.Load(directory) is { Items.Count: > 0 } session)
             {
                 sessions.Add(session);
             }
@@ -143,7 +163,14 @@ public sealed class QuarantineStore
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(item.OriginalPath)!);
-                File.Move(item.StoredPath, item.OriginalPath);
+                if (item.IsDirectory)
+                {
+                    Directory.Move(item.StoredPath, item.OriginalPath);
+                }
+                else
+                {
+                    File.Move(item.StoredPath, item.OriginalPath);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -151,7 +178,12 @@ public sealed class QuarantineStore
                 continue;
             }
 
-            AppendRecord(session.Directory, new QuarantineRecord { Event = "restored", Index = item.Index, Time = DateTimeOffset.Now });
+            // 旧版的清单不改写：移走了的项目下次读取时就不在了。
+            if (!session.IsLegacy)
+            {
+                AppendRecord(session.Directory, new QuarantineRecord { Event = "restored", Index = item.Index, Time = DateTimeOffset.Now });
+            }
+
             restored++;
             restoredBytes += item.Bytes;
         }
@@ -171,12 +203,12 @@ public sealed class QuarantineStore
             throw new IOException($"{session.Directory} 是链接，为安全起见不删除");
         }
 
-        foreach (var file in directory.EnumerateFiles("*", new EnumerationOptions { AttributesToSkip = 0 }))
-        {
-            file.Attributes = FileAttributes.Normal;
-        }
-
+        ClearReadOnly(directory);
         directory.Delete(recursive: true);
+        if (session.IsLegacy)
+        {
+            DeleteLegacyRootIfEmpty();
+        }
     }
 
     /// <summary>彻底删除多批，每一步写入操作日志。某一批失败不影响其他批。</summary>
@@ -270,7 +302,8 @@ public sealed class QuarantineStore
 
     private void DeleteIfEmpty(QuarantineSession session)
     {
-        if (Load(session.Directory) is { Items.Count: 0 })
+        var reloaded = session.IsLegacy ? LegacyQuarantine.Load(session.Directory) : Load(session.Directory);
+        if (reloaded is { Items.Count: 0 })
         {
             try
             {
@@ -281,16 +314,80 @@ public sealed class QuarantineStore
                 // 留着空目录也无妨，下次列出时会被忽略。
             }
         }
+
+        if (session.IsLegacy)
+        {
+            DeleteLegacyRootIfEmpty();
+        }
+    }
+
+    /// <summary>旧版隔离区清空后把它的根目录也删掉，免得在磁盘根目录留下一个空文件夹。</summary>
+    private void DeleteLegacyRootIfEmpty()
+    {
+        try
+        {
+            if (LegacyRoot is { } legacy && Directory.Exists(legacy) && !Directory.EnumerateFileSystemEntries(legacy).Any())
+            {
+                Directory.Delete(legacy);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 留着空目录也无妨。
+        }
+    }
+
+    private static IEnumerable<string> SessionDirectories(string? root)
+    {
+        if (root is null || !Directory.Exists(root))
+        {
+            return [];
+        }
+
+        try
+        {
+            return Directory.EnumerateDirectories(root).ToList();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>去掉只读属性，否则删不掉。不进入链接：链接只删除它本身，不碰它指向的内容。</summary>
+    private static void ClearReadOnly(DirectoryInfo directory)
+    {
+        foreach (var entry in directory.EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = true }))
+        {
+            var attributes = entry.Attributes;
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                continue;
+            }
+
+            if ((attributes & FileAttributes.ReadOnly) != 0)
+            {
+                entry.Attributes = attributes & ~FileAttributes.ReadOnly;
+            }
+
+            if (entry is DirectoryInfo child)
+            {
+                ClearReadOnly(child);
+            }
+        }
     }
 
     private void EnsureInside(string directory)
     {
         var full = Path.GetFullPath(directory);
-        if (!full.StartsWith(Root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase))
+        if (!IsInside(full, Root) && !(LegacyRoot is { } legacy && IsInside(full, legacy)))
         {
             throw new InvalidOperationException($"{directory} 不在隔离区 {Root} 中");
         }
     }
+
+    private static bool IsInside(string path, string root) =>
+        path.StartsWith(root.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>把文件移入隔离区中的一批。一次清理使用一个。</summary>

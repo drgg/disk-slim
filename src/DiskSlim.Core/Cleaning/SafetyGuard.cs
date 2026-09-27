@@ -89,6 +89,7 @@ public sealed class SafetyGuard
                 if (drive.DriveType is DriveType.Fixed or DriveType.Removable)
                 {
                     forbidden.Add(Quarantine.QuarantineStore.DefaultRoot(drive.RootDirectory.FullName));
+                    forbidden.Add(Quarantine.QuarantineStore.LegacyRootFor(drive.RootDirectory.FullName));
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

@@ -62,11 +62,14 @@ public sealed class RuleEvaluator
             matches.Add(new RuleMatch($"回收站（{_driveRoot}）", bin.Bytes, bin.Bytes, bin.ItemCount, 0));
         }
 
-        if (rule.Paths.Any(PathExpander.IsQuarantine) && _quarantine.ListSessions() is { Count: > 0 } sessions)
+        if (rule.Paths.Any(PathExpander.IsQuarantine))
         {
-            // 总大小是整个隔离区；可释放的是超过 minAgeDays 天的批次。
-            var expired = sessions.Where(s => cutoff is not { } c || s.CreatedAt < c).ToList();
-            matches.Add(new RuleMatch(_quarantine.Root, sessions.Sum(s => s.TotalBytes), expired.Sum(s => s.TotalBytes), sessions.Sum(s => s.Items.Count), 0));
+            // 总大小是整个隔离区；可释放的是超过 minAgeDays 天的批次。旧版工具的隔离区单独算一处。
+            foreach (var place in _quarantine.ListSessions().GroupBy(s => Path.GetDirectoryName(s.Directory)!, StringComparer.OrdinalIgnoreCase))
+            {
+                var expired = place.Where(s => cutoff is not { } c || s.CreatedAt < c).ToList();
+                matches.Add(new RuleMatch(place.Key, place.Sum(s => s.TotalBytes), expired.Sum(s => s.TotalBytes), place.Sum(s => s.Items.Count), 0));
+            }
         }
 
         foreach (var target in _matcher.Match(rule))

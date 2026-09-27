@@ -1,6 +1,7 @@
 using System.Globalization;
 using DiskSlim.Core.Cleaning;
 using DiskSlim.Core.Formatting;
+using DiskSlim.Core.Presentation;
 using DiskSlim.Core.Quarantine;
 using DiskSlim.Core.Reporting;
 
@@ -28,6 +29,11 @@ internal static class QuarantineCommand
         w.Write($"DiskSlim 硬盘瘦身 v{DiskReportBuilder.ToolVersion}", ConsoleColor.White);
         w.WriteLine("  ·  隔离区", ConsoleColor.DarkGray);
         w.WriteLine(store.Root, ConsoleColor.DarkGray);
+        if (sessions.Any(s => s.IsLegacy))
+        {
+            w.WriteLine($"{store.LegacyRoot}（旧版工具的隔离区，一项可能是整个文件夹）", ConsoleColor.DarkGray);
+        }
+
         w.WriteLine();
 
         if (sessions.Count == 0)
@@ -39,7 +45,7 @@ internal static class QuarantineCommand
 
         var now = DateTimeOffset.Now;
         var idWidth = sessions.Max(s => s.Id.Length) + 2;
-        w.WriteLine("  " + "批次".PadRight(idWidth - 2) + TextWidth.PadRight("  移入时间", 20) + TextWidth.PadLeft("文件数", 10) + TextWidth.PadLeft("大小", 11) + "   说明", ConsoleColor.DarkGray);
+        w.WriteLine("  " + "批次".PadRight(idWidth - 2) + TextWidth.PadRight("  移入时间", 20) + TextWidth.PadLeft("数量", 10) + TextWidth.PadLeft("大小", 11) + "   说明", ConsoleColor.DarkGray);
         foreach (var session in sessions)
         {
             var age = (now - session.CreatedAt).TotalDays;
@@ -71,10 +77,11 @@ internal static class QuarantineCommand
         }
 
         var result = store.Restore(session, SafetyGuard.ForCurrentUser());
-        w.WriteLine($"已恢复 {result.Restored:N0} 个文件（{ByteSize.Format(result.RestoredBytes)}）到原来的位置。", result.Restored > 0 ? ConsoleColor.Green : ConsoleColor.DarkGray);
+        var unit = session.IsLegacy ? "项" : "个文件";
+        w.WriteLine($"已恢复 {result.Restored:N0} {unit}（{ByteSize.Format(result.RestoredBytes)}）到原来的位置。", result.Restored > 0 ? ConsoleColor.Green : ConsoleColor.DarkGray);
         if (result.Problems.Count > 0)
         {
-            w.WriteLine($"{result.Problems.Count:N0} 个文件没有恢复，仍在隔离区中：", ConsoleColor.DarkYellow);
+            w.WriteLine($"{result.Problems.Count:N0} {unit}没有恢复，仍在隔离区中：", ConsoleColor.DarkYellow);
             foreach (var problem in result.Problems.Take(context.Options.Verbose ? int.MaxValue : 10))
             {
                 w.WriteLine($"  {TextWidth.TruncateMiddle(problem.Path, Math.Max(20, context.Width - 40))}  {problem.Reason}", ConsoleColor.DarkGray);
@@ -126,10 +133,10 @@ internal static class QuarantineCommand
         w.WriteLine(options.Execute ? "将要彻底删除：" : "将要彻底删除（模拟运行，不会删除任何文件）：", ConsoleColor.White);
         foreach (var session in selected)
         {
-            w.WriteLine($"  {session.Id}  {session.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  {session.Items.Count:N0} 个文件  {ByteSize.Format(session.TotalBytes)}  {session.Description}");
+            w.WriteLine($"  {session.Id}  {session.CreatedAt.ToLocalTime():yyyy-MM-dd HH:mm}  {DisplayText.QuarantineCount(session)}  {ByteSize.Format(session.TotalBytes)}  {session.Description}");
         }
 
-        w.WriteLine($"共 {files:N0} 个文件，{ByteSize.Format(bytes)}。彻底删除后无法恢复。");
+        w.WriteLine($"共 {files:N0} {(selected.Any(s => s.IsLegacy) ? "项" : "个文件")}，{ByteSize.Format(bytes)}。彻底删除后无法恢复。");
         if (!options.Execute)
         {
             w.WriteLine();
@@ -183,4 +190,5 @@ internal static class QuarantineCommand
         w.WriteLine($"操作日志：{log.FilePath}", ConsoleColor.DarkGray);
         return result.Problems.Count == 0 ? CliApp.ExitOk : CliApp.ExitError;
     }
+
 }
