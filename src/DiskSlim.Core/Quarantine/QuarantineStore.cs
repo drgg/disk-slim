@@ -418,9 +418,10 @@ public sealed class QuarantineWriter
     public int Count => _count;
 
     /// <summary>把文件移入隔离区。</summary>
-    /// <exception cref="IOException">移动失败，文件仍在原处。</exception>
+    /// <param name="anchor">文件所在的清理目标；给出时先按句柄核对文件的实际位置，再通过同一个句柄移动。</param>
+    /// <exception cref="IOException">移动失败（包括实际位置不在目标里），文件仍在原处。</exception>
     /// <exception cref="UnauthorizedAccessException">没有权限，文件仍在原处。</exception>
-    public void Move(string path, long bytes, string? rule)
+    public void Move(string path, long bytes, string? rule, Platform.PathAnchor? anchor = null)
     {
         lock (_lock)
         {
@@ -444,7 +445,15 @@ public sealed class QuarantineWriter
 
             try
             {
-                File.Move(path, Path.Join(SessionDirectory, stored));
+                var destination = Path.Join(SessionDirectory, stored);
+                if (anchor is null)
+                {
+                    File.Move(path, destination);
+                }
+                else
+                {
+                    Platform.HandleOperations.MoveFile(path, anchor, destination);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

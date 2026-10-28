@@ -292,17 +292,18 @@ public sealed class CleanupExecutorTests : IDisposable
 
         public RecycleBinInfo? Bin { get; init; }
 
-        public void DeleteFile(string path)
+        public void DeleteFile(string path, PathAnchor anchor)
         {
             Deleted.Add(path);
-            File.Delete(path);
+            new WindowsFileOperations().DeleteFile(path, anchor);
         }
 
-        public bool TryDeleteEmptyDirectory(string path) => new WindowsFileOperations().TryDeleteEmptyDirectory(path);
+        public bool TryDeleteEmptyDirectory(string path, PathAnchor anchor) => new WindowsFileOperations().TryDeleteEmptyDirectory(path, anchor);
 
-        public void MoveToRecycleBin(string path)
+        public void MoveToRecycleBin(string path, PathAnchor anchor)
         {
-            // 不碰真实的回收站：记录下来，然后删除文件模拟“已移走”。
+            // 不碰真实的回收站：核对位置、记录下来，然后删除文件模拟“已移走”。
+            HandleOperations.Verify(path, anchor);
             Recycled.Add(path);
             File.Delete(path);
         }
