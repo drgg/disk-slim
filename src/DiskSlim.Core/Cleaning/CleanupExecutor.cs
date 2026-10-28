@@ -1,3 +1,4 @@
+using DiskSlim.Core.Platform;
 using DiskSlim.Core.Rules;
 using DiskSlim.Core.Scanning;
 
@@ -303,19 +304,19 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
             if (target.IsFile)
             {
                 var file = new FileInfo(target.Path);
-                if (file.Exists)
+                if (file.Exists && TryAnchor(file.DirectoryName!, context))
                 {
                     ProcessFile(file, context);
                 }
             }
-            else if (Directory.Exists(target.Path))
+            else if (Directory.Exists(target.Path) && TryAnchor(target.Path, context))
             {
                 // 目标目录本身永远保留，只处理里面的内容。
                 var emptied = ProcessDirectory(target.Path, depth: 0, context);
 
                 // 例外：旧版本的程序文件夹清空后连文件夹一起删掉，不留下一个空的版本文件夹。
                 if (emptied && rule.OldVersionsOnly && rule.Action is CleanupAction.Delete or CleanupAction.Quarantine
-                    && (dryRun || _ops.TryDeleteEmptyDirectory(target.Path)))
+                    && (dryRun || _ops.TryDeleteEmptyDirectory(target.Path, context.Anchor!)))
                 {
                     outcome.Directories++;
                     if (!dryRun)
@@ -324,6 +325,24 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// 读出清理目标在磁盘上的实际位置。之后每一次删除、移动都和它核对：
+    /// 文件的实际位置必须正好是目标里同样的相对路径，路径中途经过链接时拒绝执行。
+    /// </summary>
+    private static bool TryAnchor(string directory, RuleContext context)
+    {
+        try
+        {
+            context.Anchor = PathAnchor.For(directory);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            context.Outcome.AddFailure(directory, 0, "无法确定目录的实际位置：" + Reason(ex));
+            return false;
         }
     }
 
@@ -430,7 +449,7 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
 
             var childEmpty = ProcessDirectory(entry.FullName, depth + 1, context);
             if (childEmpty && context.Rule.Action is CleanupAction.Delete or CleanupAction.Quarantine && FileAge.IsOlderThan(entry, context.Cutoff)
-                && (context.DryRun || _ops.TryDeleteEmptyDirectory(entry.FullName)))
+                && (context.DryRun || _ops.TryDeleteEmptyDirectory(entry.FullName, context.Anchor!)))
             {
                 context.Outcome.Directories++;
                 if (!context.DryRun)
@@ -482,13 +501,13 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
                 switch (action)
                 {
                     case CleanupAction.Recycle:
-                        _ops.MoveToRecycleBin(file.FullName);
+                        _ops.MoveToRecycleBin(file.FullName, context.Anchor!);
                         break;
                     case CleanupAction.Quarantine:
-                        _quarantineWriter!.Move(file.FullName, length, context.Rule.Id);
+                        _quarantineWriter!.Move(file.FullName, length, context.Rule.Id, context.Anchor);
                         break;
                     default:
-                        _ops.DeleteFile(file.FullName);
+                        _ops.DeleteFile(file.FullName, context.Anchor!);
                         break;
                 }
             }
@@ -550,5 +569,8 @@ public sealed class CleanupExecutor(IFileOperations? operations = null, IOperati
         public CancellationToken CancellationToken { get; } = cancellationToken;
 
         public HashSet<string> Exclusions { get; set; } = [];
+
+        /// <summary>当前处理的清理目标及其实际位置。</summary>
+        public PathAnchor? Anchor { get; set; }
     }
 }

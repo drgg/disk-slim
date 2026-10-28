@@ -39,6 +39,17 @@ public sealed class InteropLayoutTests
     }
 
     [Fact]
+    public void FILE_RENAME_INFO_matches_the_sdk_layout()
+    {
+        Assert.Equal(0, Offset(nameof(HandleOperations.FileRenameInfoHeader.ReplaceIfExists)));
+        Assert.Equal(8, Offset(nameof(HandleOperations.FileRenameInfoHeader.RootDirectory)));
+        Assert.Equal(16, Offset(nameof(HandleOperations.FileRenameInfoHeader.FileNameLength)));
+        Assert.Equal(20, HandleOperations.FileRenameInfoNameOffset);
+
+        static int Offset(string field) => (int)Marshal.OffsetOf<HandleOperations.FileRenameInfoHeader>(field);
+    }
+
+    [Fact]
     public void Querying_the_recycle_bin_works()
     {
         Assert.NotNull(RecycleBin.Query(Path.GetPathRoot(Path.GetTempPath())!));
